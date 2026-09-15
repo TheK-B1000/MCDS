@@ -25,6 +25,7 @@ add_library(mcds_core STATIC
     src/Validator.cpp
     src/JsonIO.cpp
     src/algorithms/Marathe.cpp
+    src/algorithms/Wan.cpp
 )
 target_include_directories(mcds_core PUBLIC include)
 
@@ -65,3 +66,4 @@ mcds_add_test(test_spatial_index)
 mcds_add_test(test_connectivity)
 mcds_add_test(test_validator)
 mcds_add_test(test_marathe)
+mcds_add_test(test_wan)

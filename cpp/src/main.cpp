@@ -22,19 +22,20 @@
 #include "SpatialIndex.hpp"
 #include "Validator.hpp"
 #include "algorithms/Marathe.hpp"
+#include "algorithms/Wan.hpp"
 
 namespace {
 
 void printUsage() {
     std::printf(
         "usage:\n"
-        "  mcds --input <file.csv> --algorithm marathe [--radius R]\n"
+        "  mcds --input <file.csv> --algorithm <marathe|wan> [--radius R]\n"
         "       [--output results/out.json] [--pretty]\n"
         "  mcds --input <file.csv> --check-connectivity [--radius R]\n"
         "\n"
         "options:\n"
         "  --input PATH           point-set CSV (required)\n"
-        "  --algorithm NAME       currently: marathe\n"
+        "  --algorithm NAME       marathe | wan\n"
         "  --radius R             UDG radius (default 1.0)\n"
         "  --output PATH          write JSON result (default: stdout)\n"
         "  --pretty               pretty-print JSON\n"
@@ -45,6 +46,9 @@ void printUsage() {
 std::unique_ptr<mcds::MCDSAlgorithm> makeAlgorithm(const std::string& name) {
     if (name == "marathe") {
         return std::make_unique<mcds::MaratheAlgorithm>();
+    }
+    if (name == "wan") {
+        return std::make_unique<mcds::WanAlgorithm>();
     }
     return nullptr;
 }

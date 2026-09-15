@@ -23,7 +23,7 @@ if str(_PYTHON_DIR) not in sys.path:
 from generators import GENERATOR_TYPES, generate, write_csv  # noqa: E402
 
 
-ALGORITHMS = ("marathe",)
+ALGORITHMS = ("marathe", "wan")
 
 # Distribution -> which geometry fields are relevant in the GUI.
 DISTRIBUTION_FIELDS: dict[str, tuple[str, ...]] = {
@@ -65,9 +65,13 @@ def find_mcds_executable(repo_root: Path | None = None) -> Path:
     candidates = [
         root / "build" / "mcds.exe",
         root / "build" / "mcds",
+        root / "build" / "Release" / "mcds.exe",
+        root / "build" / "Debug" / "mcds.exe",
         root / "build-msvc" / "mcds.exe",
+        root / "build-msvc" / "Release" / "mcds.exe",
         root / "cpp" / "build" / "mcds.exe",
         root / "cpp" / "build" / "mcds",
+        root / "cpp" / "build" / "Release" / "mcds.exe",
     ]
     env = os.environ.get("MCDS_EXECUTABLE")
     if env:
