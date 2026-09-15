@@ -21,6 +21,7 @@ add_library(mcds_core STATIC
     src/PointSet.cpp
     src/GridSpatialIndex.cpp
     src/CsvIO.cpp
+    src/Connectivity.cpp
 )
 target_include_directories(mcds_core PUBLIC include)
 
