@@ -15,6 +15,12 @@ if "--save-dir" in sys.argv and "MPLBACKEND" not in __import__("os").environ:
 
 import matplotlib.pyplot as plt  # noqa: E402
 
+ALGO_STYLE = {
+    "marathe": {"color": "#1f77b4", "marker": "o", "linestyle": "-"},
+    "wan": {"color": "#ff7f0e", "marker": "s", "linestyle": "--"},
+    "funke": {"color": "#2ca02c", "marker": "^", "linestyle": "-."},
+}
+
 
 def load_ok_rows(path: Path) -> list[dict[str, str]]:
     with path.open("r", encoding="utf-8", newline="") as handle:
@@ -32,21 +38,16 @@ def _float(row: dict[str, str], key: str) -> float | None:
         return None
 
 
-def aggregate_by_algo(
-    rows: list[dict[str, str]], y_key: str
-) -> dict[str, dict[str, dict[int, list[float]]]]:
-    """algorithm -> distribution -> n -> values."""
-    data: dict[str, dict[str, dict[int, list[float]]]] = defaultdict(
-        lambda: defaultdict(lambda: defaultdict(list))
-    )
+def aggregate_by_algo_n(rows: list[dict[str, str]], y_key: str) -> dict[str, dict[int, list[float]]]:
+    """algorithm -> n -> values (pooled over distributions/seeds)."""
+    data: dict[str, dict[int, list[float]]] = defaultdict(lambda: defaultdict(list))
     for row in rows:
         y = _float(row, y_key)
         if y is None:
             continue
         algo = row.get("algorithm", "?")
-        dist = row.get("distribution", "?")
         n = int(float(row["n"]))
-        data[algo][dist][n].append(y)
+        data[algo][n].append(y)
     return data
 
 
@@ -59,21 +60,28 @@ def plot_metric(
     *,
     log_y: bool = False,
 ) -> Path:
-    grouped = aggregate_by_algo(rows, y_key)
-    fig, ax = plt.subplots(figsize=(8.5, 5.2))
+    grouped = aggregate_by_algo_n(rows, y_key)
+    fig, ax = plt.subplots(figsize=(8.0, 5.0))
     for algo in sorted(grouped):
-        for dist in sorted(grouped[algo]):
-            xs = sorted(grouped[algo][dist])
-            ys = [
-                sum(grouped[algo][dist][n]) / len(grouped[algo][dist][n]) for n in xs
-            ]
-            ax.plot(xs, ys, marker="o", label=f"{algo}/{dist}")
+        style = ALGO_STYLE.get(algo, {"color": None, "marker": "o", "linestyle": "-"})
+        xs = sorted(grouped[algo])
+        ys = [sum(grouped[algo][n]) / len(grouped[algo][n]) for n in xs]
+        ax.plot(
+            xs,
+            ys,
+            label=algo,
+            color=style.get("color"),
+            marker=style.get("marker"),
+            linestyle=style.get("linestyle"),
+            linewidth=1.8,
+            markersize=7,
+        )
     ax.set_xlabel("n")
     ax.set_ylabel(ylabel)
     ax.set_title(title)
     if log_y:
         ax.set_yscale("log")
-    ax.legend(frameon=False, fontsize=8, ncol=2)
+    ax.legend(frameon=False)
     ax.grid(True, alpha=0.25)
     fig.tight_layout()
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -89,16 +97,34 @@ def plot_approx_ratios(exact_csv: Path, out_path: Path) -> Path | None:
         rows = [r for r in csv.DictReader(handle) if r.get("status") == "ok"]
     if not rows:
         return None
-    by_n: dict[int, dict[str, list[float]]] = defaultdict(lambda: {"marathe": [], "wan": []})
+    algos = ("marathe", "wan", "funke")
+    by_n: dict[int, dict[str, list[float]]] = defaultdict(lambda: {a: [] for a in algos})
     for r in rows:
         n = int(r["n"])
-        by_n[n]["marathe"].append(float(r["marathe_over_opt"]))
-        by_n[n]["wan"].append(float(r["wan_over_opt"]))
+        for algo in algos:
+            key = f"{algo}_over_opt"
+            if r.get(key) not in ("", None):
+                by_n[n][algo].append(float(r[key]))
     fig, ax = plt.subplots(figsize=(7.5, 4.8))
     xs = sorted(by_n)
-    for algo in ("marathe", "wan"):
-        ys = [sum(by_n[n][algo]) / len(by_n[n][algo]) for n in xs]
-        ax.plot(xs, ys, marker="o", label=f"{algo} CDS/OPT")
+    for algo in algos:
+        style = ALGO_STYLE[algo]
+        ys = []
+        use_xs = []
+        for n in xs:
+            vals = by_n[n][algo]
+            if vals:
+                use_xs.append(n)
+                ys.append(sum(vals) / len(vals))
+        if use_xs:
+            ax.plot(
+                use_xs,
+                ys,
+                label=f"{algo} CDS/OPT",
+                color=style["color"],
+                marker=style["marker"],
+                linestyle=style["linestyle"],
+            )
     ax.axhline(1.0, color="#888", linestyle="--", linewidth=1, label="OPT")
     ax.set_xlabel("n")
     ax.set_ylabel("Observed CDS / OPT")
@@ -158,7 +184,7 @@ def generate_plots(experiments_csv: Path, save_dir: Path, exact_csv: Path | None
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Plot MCDS experiment CSV metrics.")
-    parser.add_argument("--experiments-csv", default="results/two_algorithm_smoke.csv")
+    parser.add_argument("--experiments-csv", default="results/three_algorithm_smoke.csv")
     parser.add_argument("--save-dir", default="results/plots")
     parser.add_argument("--exact-csv", default="results/exact_small_study.csv")
     args = parser.parse_args(argv)

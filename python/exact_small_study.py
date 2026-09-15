@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import statistics
+import subprocess
 import sys
 from pathlib import Path
 
@@ -15,9 +17,11 @@ if str(_PYTHON_DIR) not in sys.path:
 from generators import generate, write_csv  # noqa: E402
 from gui_support import build_solver_command, find_mcds_executable, find_repo_root, run_solver  # noqa: E402
 
+ALGORITHMS = ("marathe", "wan", "funke")
+
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Exact-small OPT vs Marathe/Wan.")
+    parser = argparse.ArgumentParser(description="Exact-small OPT vs Marathe/Wan/Funke.")
     parser.add_argument("--sizes", default="8,10,12,14,16")
     parser.add_argument("--seeds", default="1,2,3")
     parser.add_argument("--distributions", default="uniform,perturbed_grid,corridor")
@@ -43,8 +47,10 @@ def main(argv: list[str] | None = None) -> int:
         "opt",
         "marathe_size",
         "wan_size",
+        "funke_size",
         "marathe_over_opt",
         "wan_over_opt",
+        "funke_over_opt",
         "status",
         "error",
     ]
@@ -54,8 +60,7 @@ def main(argv: list[str] | None = None) -> int:
         for n in sizes:
             for seed in seeds:
                 csv_path = out_dir / f"{dist}_n{n}_seed{seed}.csv"
-                # Dense enough to usually connect at tiny n.
-                gen_kwargs = {"density": args.density}
+                gen_kwargs: dict = {"density": args.density}
                 if dist == "corridor":
                     gen_kwargs["corridor_width"] = 2.5
                 if dist == "perturbed_grid":
@@ -63,20 +68,21 @@ def main(argv: list[str] | None = None) -> int:
                 result = generate(dist, n, seed, **gen_kwargs)
                 write_csv(str(csv_path), result.points)
 
-                row = {
+                row: dict = {
                     "distribution": dist,
                     "n": n,
                     "seed": seed,
                     "opt": "",
                     "marathe_size": "",
                     "wan_size": "",
+                    "funke_size": "",
                     "marathe_over_opt": "",
                     "wan_over_opt": "",
+                    "funke_over_opt": "",
                     "status": "ok",
                     "error": "",
                 }
 
-                # Connectivity gate via exact path: refuse disconnected.
                 conn_json = out_dir / f"_conn_{dist}_n{n}_seed{seed}.json"
                 conn = run_solver(
                     build_solver_command(exe, csv_path, conn_json, check_connectivity_only=True)
@@ -88,14 +94,16 @@ def main(argv: list[str] | None = None) -> int:
                     continue
 
                 opt_json = out_dir / f"_opt_{dist}_n{n}_seed{seed}.json"
-                opt_out = run_solver(
-                    build_solver_command(exe, csv_path, opt_json, algorithm="marathe")
-                )
-                # Override: call exact-small directly
-                import subprocess
-
                 completed = subprocess.run(
-                    [str(exe), "--input", str(csv_path), "--exact-small", "--output", str(opt_json), "--pretty"],
+                    [
+                        str(exe),
+                        "--input",
+                        str(csv_path),
+                        "--exact-small",
+                        "--output",
+                        str(opt_json),
+                        "--pretty",
+                    ],
                     capture_output=True,
                     text=True,
                     check=False,
@@ -109,8 +117,8 @@ def main(argv: list[str] | None = None) -> int:
                 opt_size = int(opt["cds_size"])
                 row["opt"] = opt_size
 
-                sizes_found = {}
-                for algo in ("marathe", "wan"):
+                sizes_found: dict[str, int] = {}
+                for algo in ALGORITHMS:
                     rj = out_dir / f"_{algo}_{dist}_n{n}_seed{seed}.json"
                     outcome = run_solver(
                         build_solver_command(exe, csv_path, rj, algorithm=algo)
@@ -121,13 +129,11 @@ def main(argv: list[str] | None = None) -> int:
                         break
                     sizes_found[algo] = int(outcome.result["cds_size"])
                 else:
-                    row["marathe_size"] = sizes_found["marathe"]
-                    row["wan_size"] = sizes_found["wan"]
-                    row["marathe_over_opt"] = sizes_found["marathe"] / opt_size
-                    row["wan_over_opt"] = sizes_found["wan"] / opt_size
+                    for algo in ALGORITHMS:
+                        row[f"{algo}_size"] = sizes_found[algo]
+                        row[f"{algo}_over_opt"] = sizes_found[algo] / opt_size
 
                 rows.append(row)
-                _ = opt_out
 
     with out_csv.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields)
@@ -136,14 +142,13 @@ def main(argv: list[str] | None = None) -> int:
 
     ok = [r for r in rows if r["status"] == "ok"]
     if ok:
-        m_ratios = [float(r["marathe_over_opt"]) for r in ok]
-        w_ratios = [float(r["wan_over_opt"]) for r in ok]
         print(f"wrote {out_csv}")
         print(f"ok_rows,{len(ok)}")
-        print(f"mean_marathe_over_opt,{sum(m_ratios)/len(m_ratios):.4f}")
-        print(f"mean_wan_over_opt,{sum(w_ratios)/len(w_ratios):.4f}")
-        print(f"worst_marathe_over_opt,{max(m_ratios):.4f}")
-        print(f"worst_wan_over_opt,{max(w_ratios):.4f}")
+        for algo in ALGORITHMS:
+            ratios = [float(r[f"{algo}_over_opt"]) for r in ok]
+            print(f"mean_{algo}_over_opt,{sum(ratios)/len(ratios):.4f}")
+            print(f"median_{algo}_over_opt,{statistics.median(ratios):.4f}")
+            print(f"worst_{algo}_over_opt,{max(ratios):.4f}")
     else:
         print(f"wrote {out_csv} but no successful rows")
     return 0 if ok else 1

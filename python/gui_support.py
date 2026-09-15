@@ -23,12 +23,13 @@ if str(_PYTHON_DIR) not in sys.path:
 from generators import GENERATOR_TYPES, generate, write_csv  # noqa: E402
 
 
-ALGORITHMS = ("marathe", "wan")
+ALGORITHMS = ("marathe", "wan", "funke")
 
 # GUI display labels; CLI / solver still use ALGORITHMS ids.
 ALGORITHM_LABELS: dict[str, str] = {
     "marathe": "Marathe",
     "wan": "Wan–Alzoubi–Frieder",
+    "funke": "Funke–Kesselman–Meyer–Segal",
 }
 ALGORITHM_IDS_BY_LABEL: dict[str, str] = {v: k for k, v in ALGORITHM_LABELS.items()}
 

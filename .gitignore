@@ -27,6 +27,7 @@ results/*.png
 results/runs/
 results/plots/
 results/gui_session/
+results/divergence_cases/
 !datasets/.gitkeep
 !results/.gitkeep
 

@@ -581,12 +581,15 @@ def paired_comparison(experiments_csv: Path, left: str = "marathe", right: str =
     deltas_cds: list[float] = []
     deltas_ms: list[float] = []
     deltas_q: list[float] = []
+    ratios: list[float] = []
     for _ds, algos in by_ds.items():
         if left not in algos or right not in algos:
             continue
         a = float(algos[left]["cds_size"])
         b = float(algos[right]["cds_size"])
         deltas_cds.append(b - a)
+        if a > 0:
+            ratios.append(b / a)
         if b < a:
             smaller += 1
         elif b == a:
@@ -603,15 +606,32 @@ def paired_comparison(experiments_csv: Path, left: str = "marathe", right: str =
         return sum(xs) / len(xs) if xs else float("nan")
 
     lines = [
+        f"pair,{right}_vs_{left}",
         f"paired_datasets,{len(deltas_cds)}",
         f"{right}_cds_smaller,{smaller}",
         f"same_cds_size,{same}",
         f"{right}_cds_larger,{larger}",
+        f"mean_cds_ratio ({right}/{left}),{mean(ratios):.4f}",
         f"mean_delta_cds ({right}-{left}),{mean(deltas_cds):.4f}",
         f"mean_delta_algorithm_ms,{mean(deltas_ms):.4f}",
         f"mean_delta_neighbor_queries,{mean(deltas_q):.1f}",
     ]
     return "\n".join(lines) + "\n"
+
+
+def all_paired_comparisons(experiments_csv: Path) -> str:
+    """Emit Funke-vs-Wan and Funke-vs-Marathe when those algorithms are present."""
+    with experiments_csv.open("r", encoding="utf-8", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    algos = {r.get("algorithm", "") for r in rows if r.get("status") == "ok"}
+    chunks: list[str] = []
+    if "funke" in algos and "wan" in algos:
+        chunks.append(paired_comparison(experiments_csv, left="wan", right="funke"))
+    if "funke" in algos and "marathe" in algos:
+        chunks.append(paired_comparison(experiments_csv, left="marathe", right="funke"))
+    if not chunks and "wan" in algos and "marathe" in algos:
+        chunks.append(paired_comparison(experiments_csv, left="marathe", right="wan"))
+    return "".join(chunks) if chunks else paired_comparison(experiments_csv)
 
 
 def run_campaign(config_path: Path, *, force: bool = False, measure_memory: bool = True) -> dict[str, Any]:
@@ -713,7 +733,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config", required=True, help="experiment JSON config")
     parser.add_argument("--force", action="store_true", help="rerun even if run_id completed")
     parser.add_argument("--summary", action="store_true", help="print summary of experiments CSV and exit")
-    parser.add_argument("--paired", action="store_true", help="print Marathe vs Wan paired comparison")
+    parser.add_argument("--paired", action="store_true", help="print paired algorithm comparisons")
     parser.add_argument("--no-memory", action="store_true", help="skip peak-memory measurement")
     args = parser.parse_args(argv)
 
@@ -725,13 +745,13 @@ def main(argv: list[str] | None = None) -> int:
         if args.summary:
             print(summarize(experiments_csv), end="")
         if args.paired:
-            print(paired_comparison(experiments_csv), end="")
+            print(all_paired_comparisons(experiments_csv), end="")
         return 0
 
     stats = run_campaign(config_path, force=args.force, measure_memory=not args.no_memory)
     print(json.dumps(stats, indent=2))
     print(summarize(Path(stats["experiments_csv"])), end="")
-    print(paired_comparison(Path(stats["experiments_csv"])), end="")
+    print(all_paired_comparisons(Path(stats["experiments_csv"])), end="")
     return 0 if stats["runs_failed"] == 0 and stats["datasets_failed"] == 0 else 1
 
 
