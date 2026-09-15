@@ -1,100 +1,119 @@
-// Milestone 1 driver: load a point set, build the spatial index, and exercise
-// radius queries. No MCDS algorithm is wired up yet, and no graph is built.
+// Unified CLI for implicit-UDG MCDS experiments.
 //
-//     mcds <input.csv> [--radius R]
+//   mcds --input datasets/example.csv --algorithm marathe --radius 1.0 \
+//        --output results/example.json --pretty
+//
+//   mcds --input datasets/example.csv --check-connectivity
 
 #include <cstdio>
+#include <cstdlib>
 #include <exception>
+#include <fstream>
+#include <iostream>
+#include <memory>
 #include <string>
-#include <vector>
 
+#include "Connectivity.hpp"
 #include "CsvIO.hpp"
 #include "GridSpatialIndex.hpp"
+#include "JsonIO.hpp"
 #include "Metrics.hpp"
 #include "PointSet.hpp"
 #include "SpatialIndex.hpp"
+#include "Validator.hpp"
+#include "algorithms/Marathe.hpp"
 
 namespace {
 
 void printUsage() {
     std::printf(
-        "usage: mcds <input.csv> [--radius R]\n"
+        "usage:\n"
+        "  mcds --input <file.csv> --algorithm marathe [--radius R]\n"
+        "       [--output results/out.json] [--pretty]\n"
+        "  mcds --input <file.csv> --check-connectivity [--radius R]\n"
         "\n"
-        "  Loads a point set, builds the spatial index, and reports degree\n"
-        "  statistics obtained purely through radius queries.\n");
+        "options:\n"
+        "  --input PATH           point-set CSV (required)\n"
+        "  --algorithm NAME       currently: marathe\n"
+        "  --radius R             UDG radius (default 1.0)\n"
+        "  --output PATH          write JSON result (default: stdout)\n"
+        "  --pretty               pretty-print JSON\n"
+        "  --check-connectivity   report components and exit (no algorithm)\n"
+        "  --help                 show this help\n");
 }
 
-/// Walks every point once through the SpatialIndex to summarise the UDG without
-/// ever storing it. Only one reusable neighbor buffer is held at a time, so peak
-/// memory stays O(n + max degree) rather than O(edges).
-struct DegreeSummary {
-    std::size_t minDegree = 0;
-    std::size_t maxDegree = 0;
-    std::size_t isolated = 0;
-    double meanDegree = 0.0;
-    double elapsedMs = 0.0;
-};
-
-DegreeSummary summarizeDegrees(const mcds::PointSet& points, const mcds::SpatialIndex& index, double radius) {
-    DegreeSummary summary;
-    if (points.empty()) {
-        return summary;
+std::unique_ptr<mcds::MCDSAlgorithm> makeAlgorithm(const std::string& name) {
+    if (name == "marathe") {
+        return std::make_unique<mcds::MaratheAlgorithm>();
     }
-
-    mcds::Timer timer;
-    std::vector<int> neighbors;  // one buffer, reused for every query
-    unsigned long long degreeTotal = 0;
-    summary.minDegree = static_cast<std::size_t>(-1);
-
-    for (const mcds::Point& p : points.points()) {
-        index.radiusQuery(p.id, radius, neighbors);
-        const std::size_t degree = neighbors.size();
-        degreeTotal += degree;
-        if (degree < summary.minDegree) summary.minDegree = degree;
-        if (degree > summary.maxDegree) summary.maxDegree = degree;
-        if (degree == 0) ++summary.isolated;
-    }
-
-    summary.meanDegree = static_cast<double>(degreeTotal) / static_cast<double>(points.size());
-    summary.elapsedMs = timer.elapsedMs();
-    return summary;
+    return nullptr;
 }
 
 }  // namespace
 
 int main(int argc, char** argv) {
     std::string inputPath;
+    std::string algorithmName;
+    std::string outputPath;
     double radius = 1.0;
+    bool pretty = false;
+    bool checkConnectivityOnly = false;
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
+        auto needValue = [&](const char* opt) -> const char* {
+            if (i + 1 >= argc) {
+                std::fprintf(stderr, "error: %s requires a value\n", opt);
+                std::exit(2);
+            }
+            return argv[++i];
+        };
+
         if (arg == "--help" || arg == "-h") {
             printUsage();
             return 0;
         }
+        if (arg == "--input") {
+            inputPath = needValue("--input");
+            continue;
+        }
+        if (arg == "--algorithm") {
+            algorithmName = needValue("--algorithm");
+            continue;
+        }
         if (arg == "--radius") {
-            if (i + 1 >= argc) {
-                std::fprintf(stderr, "error: --radius requires a value\n");
-                return 2;
-            }
             try {
-                radius = std::stod(argv[++i]);
+                radius = std::stod(needValue("--radius"));
             } catch (const std::exception&) {
-                std::fprintf(stderr, "error: --radius value '%s' is not a number\n", argv[i]);
+                std::fprintf(stderr, "error: --radius value is not a number\n");
                 return 2;
             }
             continue;
         }
-        if (!arg.empty() && arg[0] == '-') {
-            std::fprintf(stderr, "error: unknown option '%s'\n", arg.c_str());
-            printUsage();
-            return 2;
+        if (arg == "--output") {
+            outputPath = needValue("--output");
+            continue;
         }
-        if (!inputPath.empty()) {
-            std::fprintf(stderr, "error: more than one input file given\n");
-            return 2;
+        if (arg == "--pretty") {
+            pretty = true;
+            continue;
         }
-        inputPath = arg;
+        if (arg == "--check-connectivity") {
+            checkConnectivityOnly = true;
+            continue;
+        }
+        // Backward-compatible positional input: mcds file.csv
+        if (!arg.empty() && arg[0] != '-') {
+            if (!inputPath.empty()) {
+                std::fprintf(stderr, "error: more than one input path given\n");
+                return 2;
+            }
+            inputPath = arg;
+            continue;
+        }
+        std::fprintf(stderr, "error: unknown option '%s'\n", arg.c_str());
+        printUsage();
+        return 2;
     }
 
     if (inputPath.empty()) {
@@ -105,50 +124,134 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "error: radius must be positive\n");
         return 2;
     }
+    if (!checkConnectivityOnly && algorithmName.empty()) {
+        // Default for the milestone: run marathe when no mode is specified,
+        // matching the early `mcds input.csv` habit once the algorithm exists.
+        algorithmName = "marathe";
+    }
 
     try {
-        mcds::Timer loadTimer;
+        mcds::Timer totalTimer;
+        mcds::RunResult result;
+        result.inputFile = inputPath;
+        result.radius = radius;
+        result.algorithm = checkConnectivityOnly ? "none" : algorithmName;
+
+        mcds::Timer stage;
         const mcds::PointSet points = mcds::loadPointsCsvFile(inputPath);
-        const double loadMs = loadTimer.elapsedMs();
+        result.loadMs = stage.elapsedMs();
+        result.n = points.size();
 
-        const mcds::BoundingBox box = points.boundingBox();
-
-        mcds::Timer buildTimer;
+        stage.restart();
         mcds::GridSpatialIndex grid(points, radius);
-        const double buildMs = buildTimer.elapsedMs();
+        result.indexBuildMs = stage.elapsedMs();
+        result.indexBackend = grid.name();
+        mcds::SpatialIndex& index = grid;
 
-        const mcds::SpatialIndex& index = grid;
-        const DegreeSummary degrees = summarizeDegrees(points, index, radius);
+        // --- Connectivity stage (own metric snapshot) -------------------
+        index.resetStats();
+        stage.restart();
+        const mcds::ConnectivityResult connectivity =
+            mcds::findConnectedComponents(points, index, radius);
+        result.connectivityMs = stage.elapsedMs();
+        result.connectedInput = connectivity.connected;
+        result.componentCount = connectivity.componentCount;
+        result.largestComponent = connectivity.largestComponent;
+        result.isolatedCount = connectivity.isolatedCount;
+        result.connectivityNeighborQueries = index.stats().neighborQueries;
+        result.connectivityCandidatesExamined = index.stats().candidatesExamined;
 
-        std::printf("input            %s\n", inputPath.c_str());
-        std::printf("points           %zu\n", points.size());
-        std::printf("radius           %.6g\n", radius);
-        std::printf("bounding box     [%.6g, %.6g] x [%.6g, %.6g]\n", box.minX, box.maxX, box.minY, box.maxY);
-        std::printf("identity ids     %s\n", points.usesIdentityIds() ? "yes" : "no");
-        std::printf("\n");
-        std::printf("index backend    %s\n", index.name());
-        std::printf("cell size        %.6g\n", grid.cellSize());
-        std::printf("grid             %d x %d cells (%zu total)\n", grid.cellsX(), grid.cellsY(), grid.cellCount());
-        std::printf("index memory     %.3f MB\n", static_cast<double>(grid.indexBytes()) / (1024.0 * 1024.0));
-        std::printf("\n");
-        std::printf("degree min/mean/max   %zu / %.3f / %zu\n", degrees.minDegree, degrees.meanDegree,
-                    degrees.maxDegree);
-        std::printf("isolated points       %zu\n", degrees.isolated);
-        std::printf("implied UDG edges     %.0f  (counted, never stored)\n",
-                    static_cast<double>(index.stats().neighborsReturned) / 2.0);
-        std::printf("\n");
-        std::printf("neighbor queries      %llu\n", static_cast<unsigned long long>(index.stats().neighborQueries));
-        std::printf("candidates examined   %llu\n", static_cast<unsigned long long>(index.stats().candidatesExamined));
-        std::printf("candidates per result %.2f\n",
-                    index.stats().neighborsReturned == 0
-                        ? 0.0
-                        : static_cast<double>(index.stats().candidatesExamined) /
-                              static_cast<double>(index.stats().neighborsReturned));
-        std::printf("\n");
-        std::printf("csv load              %.2f ms\n", loadMs);
-        std::printf("index build           %.2f ms\n", buildMs);
-        std::printf("all radius queries    %.2f ms\n", degrees.elapsedMs);
-        return 0;
+        if (checkConnectivityOnly) {
+            result.totalMs = totalTimer.elapsedMs();
+            if (outputPath.empty()) {
+                std::printf("input            %s\n", inputPath.c_str());
+                std::printf("points           %zu\n", result.n);
+                std::printf("radius           %.6g\n", radius);
+                std::printf("connected        %s\n", result.connectedInput ? "true" : "false");
+                std::printf("components       %zu\n", result.componentCount);
+                std::printf("largest          %zu\n", result.largestComponent);
+                std::printf("isolated         %zu\n", result.isolatedCount);
+                std::printf("neighbor queries %llu\n",
+                            static_cast<unsigned long long>(result.connectivityNeighborQueries));
+                std::printf("connectivity_ms  %.3f\n", result.connectivityMs);
+                return result.connectedInput ? 0 : 1;
+            }
+            std::ofstream out(outputPath);
+            if (!out) {
+                std::fprintf(stderr, "error: cannot write '%s'\n", outputPath.c_str());
+                return 1;
+            }
+            mcds::writeRunResultJson(out, result, pretty);
+            return result.connectedInput ? 0 : 1;
+        }
+
+        if (!result.connectedInput) {
+            std::fprintf(stderr,
+                         "error: input UDG is disconnected (%zu components); "
+                         "refusing to run %s\n",
+                         result.componentCount, algorithmName.c_str());
+            return 1;
+        }
+
+        auto algorithm = makeAlgorithm(algorithmName);
+        if (!algorithm) {
+            std::fprintf(stderr, "error: unknown algorithm '%s'\n", algorithmName.c_str());
+            return 2;
+        }
+
+        // --- Algorithm stage --------------------------------------------
+        index.resetStats();
+        stage.restart();
+        const mcds::MCDSResult cds = algorithm->solve(points, index, radius);
+        result.algorithmMs = stage.elapsedMs();
+        result.algorithmNeighborQueries = index.stats().neighborQueries;
+        result.algorithmCandidatesExamined = index.stats().candidatesExamined;
+        result.selectedIds = cds.selectedIds;
+        result.cdsSize = cds.selectedIds.size();
+        result.cdsRatio =
+            result.n == 0 ? 0.0 : static_cast<double>(result.cdsSize) / static_cast<double>(result.n);
+
+        // --- Validation stage -------------------------------------------
+        index.resetStats();
+        stage.restart();
+        mcds::ValidationOptions vopts;
+        vopts.maxDiagnostics = 32;
+        const mcds::ValidationResult validation =
+            mcds::validateCDS(points, index, cds.selectedIds, radius, vopts);
+        result.validationMs = stage.elapsedMs();
+        result.validationNeighborQueries = index.stats().neighborQueries;
+        result.validationCandidatesExamined = index.stats().candidatesExamined;
+        result.validDominating = validation.dominating;
+        result.validConnected = validation.connected;
+
+        result.totalMs = totalTimer.elapsedMs();
+
+        if (!validation.valid()) {
+            std::fprintf(stderr, "VALIDATION FAILED\n");
+            std::fprintf(stderr, "Dominating: %s\n", validation.dominating ? "true" : "false");
+            std::fprintf(stderr, "Connected:  %s\n", validation.connected ? "true" : "false");
+            if (!validation.undominatedIds.empty()) {
+                std::fprintf(stderr, "Undominated point IDs (capped):\n");
+                for (const int id : validation.undominatedIds) {
+                    std::fprintf(stderr, "  %d\n", id);
+                }
+            }
+        }
+
+        if (outputPath.empty()) {
+            mcds::writeRunResultJson(std::cout, result, pretty || true);
+        } else {
+            std::ofstream out(outputPath);
+            if (!out) {
+                std::fprintf(stderr, "error: cannot write '%s'\n", outputPath.c_str());
+                return 1;
+            }
+            mcds::writeRunResultJson(out, result, pretty);
+            std::printf("wrote %s  cds_size=%zu  valid=%s  algorithm_ms=%.3f\n", outputPath.c_str(),
+                        result.cdsSize, validation.valid() ? "true" : "false", result.algorithmMs);
+        }
+
+        return validation.valid() ? 0 : 1;
     } catch (const std::exception& e) {
         std::fprintf(stderr, "error: %s\n", e.what());
         return 1;

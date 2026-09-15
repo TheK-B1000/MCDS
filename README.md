@@ -221,36 +221,25 @@ id, and a file with no points.
 ## Running
 
 ```bash
-./build/mcds datasets/uniform_1000.csv --radius 1.0
+# Generate a connected instance
+python python/generators.py --type perturbed_grid --n 200 --seed 42 \
+    --output datasets/e2e_grid_200.csv
+
+# Check connectivity without running an algorithm
+./build/mcds --input datasets/e2e_grid_200.csv --check-connectivity
+
+# Run Marathe CDOM and write JSON
+./build/mcds \
+    --input datasets/e2e_grid_200.csv \
+    --algorithm marathe \
+    --radius 1.0 \
+    --output results/e2e_grid_200.json \
+    --pretty
 ```
 
-This milestone's driver loads the points, builds the index, and reports degree
-statistics gathered purely through radius queries:
-
-```
-points           1000
-radius           1
-bounding box     [0.009077, 22.3586] x [0.077665, 22.3511]
-index backend    uniform-grid
-cell size        1
-grid             23 x 23 cells (529 total)
-index memory     0.006 MB
-
-degree min/mean/max   0 / 6.036 / 14
-isolated points       3
-implied UDG edges     3018  (counted, never stored)
-
-neighbor queries      1000
-candidates examined   17580
-candidates per result 2.91
-
-csv load              2.04 ms
-index build           0.02 ms
-all radius queries    0.21 ms
-```
-
-The whole pass holds a single reusable neighbor buffer, so peak memory is
-`O(n + max degree)` rather than `O(edges)`.
+The JSON result separates timing and neighbour-query counters by stage
+(`load_ms`, `index_build_ms`, `connectivity_ms`, `algorithm_ms`,
+`validation_ms`) so algorithm cost is not confused with I/O or validation.
 
 ---
 
@@ -258,24 +247,11 @@ The whole pass holds a single reusable neighbor buffer, so peak memory is
 
 ```bash
 ctest --test-dir build --output-on-failure
+python -m unittest python.tests.test_generators -v
 ```
 
-35 cases across two suites. The harness is ~70 lines in
-`cpp/tests/TestHarness.hpp`; there is no external test dependency.
-
-The important ones are **differential**: `bruteForceNeighbors` in
-`cpp/tests/BruteForce.hpp` answers a query by scanning all `n` points — the
-quadratic behaviour this project exists to avoid — and the grid index must agree
-with it exactly, id for id. That runs over 168 random instances spanning six
-seeds, sizes 1 to 900, and four densities from tight-clique to sparse, plus a
-unit-spaced lattice where every orthogonal neighbor sits at distance exactly
-1.0, plus clustered input, plus nine radii from 0.0 to 12.0.
-
-Other cases cover the hand-checked `A/B/C/D` configuration from the brief,
-self-exclusion, coincident points, isolated points, a 300-point clique,
-negative coordinates, coordinates near `10^6`, a ten-million-unit span that
-forces the cell-size guard, all-identical points, unknown ids, invalid radii,
-an empty point set, and the instrumentation counters.
+C++ suites: CSV, spatial index, connectivity, validator, Marathe.
+Python: generator determinism and geometric properties.
 
 ---
 
@@ -310,25 +286,17 @@ point set must outlive the index.
 
 ## Current status
 
-Done and tested:
+Done and tested through the Marathe end-to-end pipeline:
 
-- [x] Deterministic Python point generation, five distributions
-- [x] C++ loading of that CSV, with validation
-- [x] Radius-1 neighbor queries with no graph materialised
-- [x] Queries verified against brute force on randomised instances
-- [x] Query instrumentation
+- [x] Deterministic Python point generation (five distributions)
+- [x] C++ CSV loading + spatial index + brute-force differential tests
+- [x] Implicit connectivity / connected components
+- [x] Independent CDS validator (domination + selected-only connectivity)
+- [x] Marathe CDOM documented from arXiv:math/9409226 and implemented
+- [x] Unified CLI with staged timing and JSON results
 
-Not started:
+Not started (next milestones):
 
-- [ ] Implicit connectivity checking (lazy BFS through `SpatialIndex`)
-- [ ] Independent domination + connectivity validator
-- [ ] Marathe et al. 1995 heuristic — **blocked**, see below
-- [ ] JSON result output, Python visualisation, GUI, benchmark runner
-
-**Blocker on the algorithm.** The next algorithmic milestone is the heuristic of
-Marathe, Breu, Hunt III, Ravi and Rosenkrantz, *"Simple Heuristics for Unit Disk
-Graphs"*, Networks 25(2):59-68, 1995. The paper is not in this repository, and
-implementing it faithfully requires its actual construction rather than a
-generic greedy CDS heuristic substituted in its place. Add the paper (or a
-detailed description of its connected-dominating-set construction and the
-approximation guarantee it claims) before that phase begins.
+- [ ] Python visualisation / GUI
+- [ ] Experiment runner and scaling campaign
+- [ ] Additional algorithms (Wan, Funke, Li) — only after Marathe stays green

@@ -23,6 +23,7 @@ add_library(mcds_core STATIC
     src/CsvIO.cpp
     src/Connectivity.cpp
     src/Validator.cpp
+    src/JsonIO.cpp
     src/algorithms/Marathe.cpp
 )
 target_include_directories(mcds_core PUBLIC include)
