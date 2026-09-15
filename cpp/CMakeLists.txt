@@ -22,6 +22,7 @@ add_library(mcds_core STATIC
     src/GridSpatialIndex.cpp
     src/CsvIO.cpp
     src/Connectivity.cpp
+    src/Validator.cpp
 )
 target_include_directories(mcds_core PUBLIC include)
 
