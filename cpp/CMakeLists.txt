@@ -59,3 +59,4 @@ endfunction()
 
 mcds_add_test(test_csv_io)
 mcds_add_test(test_spatial_index)
+mcds_add_test(test_connectivity)
