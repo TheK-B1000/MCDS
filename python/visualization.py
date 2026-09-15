@@ -222,6 +222,8 @@ def build_title(data: PlotData) -> str:
         algo = "Wan–Alzoubi–Frieder"
     elif algo.lower() == "funke":
         algo = "Funke–Kesselman–Meyer–Segal"
+    elif algo.lower() == "li":
+        algo = "Li S-MIS"
     n = int(result.get("n", len(data.point_ids)))
     cds = int(result.get("cds_size", len(data.selected_ids)))
     ratio = float(result.get("cds_ratio", cds / n if n else 0.0))

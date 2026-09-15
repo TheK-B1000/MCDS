@@ -620,16 +620,20 @@ def paired_comparison(experiments_csv: Path, left: str = "marathe", right: str =
 
 
 def all_paired_comparisons(experiments_csv: Path) -> str:
-    """Emit Funke-vs-Wan and Funke-vs-Marathe when those algorithms are present."""
+    """Emit Li/Funke/Wan/Marathe paired comparisons when present."""
     with experiments_csv.open("r", encoding="utf-8", newline="") as handle:
         rows = list(csv.DictReader(handle))
     algos = {r.get("algorithm", "") for r in rows if r.get("status") == "ok"}
     chunks: list[str] = []
-    if "funke" in algos and "wan" in algos:
-        chunks.append(paired_comparison(experiments_csv, left="wan", right="funke"))
-    if "funke" in algos and "marathe" in algos:
-        chunks.append(paired_comparison(experiments_csv, left="marathe", right="funke"))
-    if not chunks and "wan" in algos and "marathe" in algos:
+    if "li" in algos:
+        for other in ("marathe", "wan", "funke"):
+            if other in algos:
+                chunks.append(paired_comparison(experiments_csv, left=other, right="li"))
+    elif "funke" in algos:
+        for other in ("marathe", "wan"):
+            if other in algos:
+                chunks.append(paired_comparison(experiments_csv, left=other, right="funke"))
+    elif "wan" in algos and "marathe" in algos:
         chunks.append(paired_comparison(experiments_csv, left="marathe", right="wan"))
     return "".join(chunks) if chunks else paired_comparison(experiments_csv)
 

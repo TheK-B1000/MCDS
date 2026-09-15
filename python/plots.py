@@ -19,6 +19,7 @@ ALGO_STYLE = {
     "marathe": {"color": "#1f77b4", "marker": "o", "linestyle": "-"},
     "wan": {"color": "#ff7f0e", "marker": "s", "linestyle": "--"},
     "funke": {"color": "#2ca02c", "marker": "^", "linestyle": "-."},
+    "li": {"color": "#d62728", "marker": "D", "linestyle": ":"},
 }
 
 
@@ -39,7 +40,6 @@ def _float(row: dict[str, str], key: str) -> float | None:
 
 
 def aggregate_by_algo_n(rows: list[dict[str, str]], y_key: str) -> dict[str, dict[int, list[float]]]:
-    """algorithm -> n -> values (pooled over distributions/seeds)."""
     data: dict[str, dict[int, list[float]]] = defaultdict(lambda: defaultdict(list))
     for row in rows:
         y = _float(row, y_key)
@@ -97,7 +97,7 @@ def plot_approx_ratios(exact_csv: Path, out_path: Path) -> Path | None:
         rows = [r for r in csv.DictReader(handle) if r.get("status") == "ok"]
     if not rows:
         return None
-    algos = ("marathe", "wan", "funke")
+    algos = ("marathe", "wan", "funke", "li")
     by_n: dict[int, dict[str, list[float]]] = defaultdict(lambda: {a: [] for a in algos})
     for r in rows:
         n = int(r["n"])
@@ -109,8 +109,8 @@ def plot_approx_ratios(exact_csv: Path, out_path: Path) -> Path | None:
     xs = sorted(by_n)
     for algo in algos:
         style = ALGO_STYLE[algo]
-        ys = []
-        use_xs = []
+        use_xs: list[int] = []
+        ys: list[float] = []
         for n in xs:
             vals = by_n[n][algo]
             if vals:
@@ -129,6 +129,52 @@ def plot_approx_ratios(exact_csv: Path, out_path: Path) -> Path | None:
     ax.set_xlabel("n")
     ax.set_ylabel("Observed CDS / OPT")
     ax.set_title("Observed approximation ratio (exact-small study)")
+    ax.legend(frameon=False)
+    ax.grid(True, alpha=0.25)
+    fig.tight_layout()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out_path, dpi=140, bbox_inches="tight")
+    plt.close(fig)
+    return out_path
+
+
+def plot_quality_vs_query_cost(rows: list[dict[str, str]], out_path: Path) -> Path | None:
+    """Scatter mean delta CDS vs query multiplier relative to Marathe (paired by dataset)."""
+    by_ds: dict[str, dict[str, dict[str, str]]] = {}
+    for row in rows:
+        ds = row.get("dataset_csv", "")
+        algo = row.get("algorithm", "")
+        if ds and algo:
+            by_ds.setdefault(ds, {})[algo] = row
+    fig, ax = plt.subplots(figsize=(7.5, 5.0))
+    plotted = False
+    for algo in ("wan", "funke", "li"):
+        xs: list[float] = []
+        ys: list[float] = []
+        for algos in by_ds.values():
+            if "marathe" not in algos or algo not in algos:
+                continue
+            m_cds = float(algos["marathe"]["cds_size"])
+            a_cds = float(algos[algo]["cds_size"])
+            m_q = float(algos["marathe"]["algorithm_neighbor_queries"])
+            a_q = float(algos[algo]["algorithm_neighbor_queries"])
+            if m_q <= 0:
+                continue
+            xs.append(a_q / m_q)
+            ys.append(a_cds - m_cds)
+        if not xs:
+            continue
+        style = ALGO_STYLE[algo]
+        ax.scatter(xs, ys, label=algo, color=style["color"], marker=style["marker"], s=36, alpha=0.85)
+        plotted = True
+    if not plotted:
+        plt.close(fig)
+        return None
+    ax.axhline(0.0, color="#888", linestyle="--", linewidth=1)
+    ax.axvline(1.0, color="#888", linestyle="--", linewidth=1)
+    ax.set_xlabel("neighbor-query multiplier vs Marathe")
+    ax.set_ylabel("CDS size − Marathe CDS size")
+    ax.set_title("Quality vs query cost (paired datasets)")
     ax.legend(frameon=False)
     ax.grid(True, alpha=0.25)
     fig.tight_layout()
@@ -175,6 +221,9 @@ def generate_plots(experiments_csv: Path, save_dir: Path, exact_csv: Path | None
             save_dir / "candidates_vs_n.png",
         ),
     ]
+    qpath = plot_quality_vs_query_cost(rows, save_dir / "quality_vs_query_cost.png")
+    if qpath is not None:
+        outputs.append(qpath)
     if exact_csv is not None:
         path = plot_approx_ratios(exact_csv, save_dir / "observed_approx_vs_n.png")
         if path is not None:
@@ -184,7 +233,7 @@ def generate_plots(experiments_csv: Path, save_dir: Path, exact_csv: Path | None
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Plot MCDS experiment CSV metrics.")
-    parser.add_argument("--experiments-csv", default="results/three_algorithm_smoke.csv")
+    parser.add_argument("--experiments-csv", default="results/four_algorithm_smoke.csv")
     parser.add_argument("--save-dir", default="results/plots")
     parser.add_argument("--exact-csv", default="results/exact_small_study.csv")
     args = parser.parse_args(argv)

@@ -20,7 +20,7 @@ from generators import generate, write_csv  # noqa: E402
 from gui_support import build_solver_command, find_mcds_executable, find_repo_root, run_solver  # noqa: E402
 
 
-ALGORITHMS = ("marathe", "wan", "funke")
+ALGORITHMS = ("marathe", "wan", "funke", "li")
 
 
 def _gen_kwargs(dist: str, density: float) -> dict:
@@ -153,8 +153,19 @@ def main(argv: list[str] | None = None) -> int:
 
                     relation = (
                         "all_differ"
-                        if len(unique_sizes) == 3
-                        else "two_agree_one_differs"
+                        if len(unique_sizes) == len(ALGORITHMS)
+                        else "partial_ties"
+                    )
+                    # Classify notable patterns without favoring Li.
+                    sizes_list = [sizes_found[a] for a in ALGORITHMS]
+                    min_size = min(sizes_list)
+                    winners = [a for a in ALGORITHMS if sizes_found[a] == min_size]
+                    pattern = (
+                        "all_equal"
+                        if len(unique_sizes) == 1
+                        else f"unique_smallest:{winners[0]}"
+                        if len(winners) == 1
+                        else f"tied_smallest:{'+'.join(winners)}"
                     )
                     row = {
                         "case_id": case_id,
@@ -165,20 +176,29 @@ def main(argv: list[str] | None = None) -> int:
                         "marathe_size": sizes_found["marathe"],
                         "wan_size": sizes_found["wan"],
                         "funke_size": sizes_found["funke"],
+                        "li_size": sizes_found["li"],
                         "opt": opt_size,
                         "relation": relation,
-                        "funke_vs_wan": (
+                        "pattern": pattern,
+                        "li_vs_wan": (
                             "smaller"
-                            if sizes_found["funke"] < sizes_found["wan"]
+                            if sizes_found["li"] < sizes_found["wan"]
                             else "larger"
-                            if sizes_found["funke"] > sizes_found["wan"]
+                            if sizes_found["li"] > sizes_found["wan"]
                             else "same"
                         ),
-                        "funke_vs_marathe": (
+                        "li_vs_funke": (
                             "smaller"
-                            if sizes_found["funke"] < sizes_found["marathe"]
+                            if sizes_found["li"] < sizes_found["funke"]
                             else "larger"
-                            if sizes_found["funke"] > sizes_found["marathe"]
+                            if sizes_found["li"] > sizes_found["funke"]
+                            else "same"
+                        ),
+                        "li_vs_marathe": (
+                            "smaller"
+                            if sizes_found["li"] < sizes_found["marathe"]
+                            else "larger"
+                            if sizes_found["li"] > sizes_found["marathe"]
                             else "same"
                         ),
                     }
@@ -186,7 +206,8 @@ def main(argv: list[str] | None = None) -> int:
                     print(
                         f"divergent {case_id}: "
                         f"m={sizes_found['marathe']} w={sizes_found['wan']} "
-                        f"f={sizes_found['funke']}"
+                        f"f={sizes_found['funke']} li={sizes_found['li']} "
+                        f"({pattern})"
                     )
 
     index_csv = out_root / "index.csv"
@@ -199,10 +220,13 @@ def main(argv: list[str] | None = None) -> int:
         "marathe_size",
         "wan_size",
         "funke_size",
+        "li_size",
         "opt",
         "relation",
-        "funke_vs_wan",
-        "funke_vs_marathe",
+        "pattern",
+        "li_vs_wan",
+        "li_vs_funke",
+        "li_vs_marathe",
     ]
     with index_csv.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=fields)

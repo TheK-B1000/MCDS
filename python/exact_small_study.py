@@ -17,11 +17,11 @@ if str(_PYTHON_DIR) not in sys.path:
 from generators import generate, write_csv  # noqa: E402
 from gui_support import build_solver_command, find_mcds_executable, find_repo_root, run_solver  # noqa: E402
 
-ALGORITHMS = ("marathe", "wan", "funke")
+ALGORITHMS = ("marathe", "wan", "funke", "li")
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Exact-small OPT vs Marathe/Wan/Funke.")
+    parser = argparse.ArgumentParser(description="Exact-small OPT vs heuristics.")
     parser.add_argument("--sizes", default="8,10,12,14,16")
     parser.add_argument("--seeds", default="1,2,3")
     parser.add_argument("--distributions", default="uniform,perturbed_grid,corridor")
@@ -45,12 +45,8 @@ def main(argv: list[str] | None = None) -> int:
         "n",
         "seed",
         "opt",
-        "marathe_size",
-        "wan_size",
-        "funke_size",
-        "marathe_over_opt",
-        "wan_over_opt",
-        "funke_over_opt",
+        *[f"{a}_size" for a in ALGORITHMS],
+        *[f"{a}_over_opt" for a in ALGORITHMS],
         "status",
         "error",
     ]
@@ -73,12 +69,8 @@ def main(argv: list[str] | None = None) -> int:
                     "n": n,
                     "seed": seed,
                     "opt": "",
-                    "marathe_size": "",
-                    "wan_size": "",
-                    "funke_size": "",
-                    "marathe_over_opt": "",
-                    "wan_over_opt": "",
-                    "funke_over_opt": "",
+                    **{f"{a}_size": "" for a in ALGORITHMS},
+                    **{f"{a}_over_opt": "" for a in ALGORITHMS},
                     "status": "ok",
                     "error": "",
                 }

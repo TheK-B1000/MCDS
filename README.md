@@ -278,12 +278,23 @@ set via `GetProcessMemoryInfo`; POSIX: `RUSAGE_CHILDREN` max RSS).
 ## Running tests
 
 ```bash
-ctest --test-dir build --output-on-failure
-python -m unittest discover -s python/tests -v
+ctest --test-dir cpp/build --output-on-failure
 ```
 
-C++ suites: CSV, spatial index, connectivity, validator, Marathe.
-Python: generators, visualization, GUI orchestration, experiment runner.
+### Python environment (required for plots / GUI / visualization tests)
+
+Use **one** CPython interpreter (3.10+) for all Python work. On Windows, prefer
+the `py -3` launcher (or a venv) over MSYS Python, which often lacks packages:
+
+```bash
+py -3 -m pip install -r python/requirements.txt
+py -3 python/check_env.py
+py -3 -m unittest discover -s python/tests -v
+```
+
+`python/check_env.py` verifies `matplotlib` is importable on the active
+interpreter. Plotting, GUI, and visualization tests all use that same
+interpreter.
 
 ---
 
