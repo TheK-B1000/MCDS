@@ -260,11 +260,33 @@ def create_figure(
     max_render_points: int = DEFAULT_MAX_RENDER_POINTS,
     edge_k_limit: int = DEFAULT_EDGE_K_LIMIT,
     downsample_seed: int = 0,
+    dark: bool = False,
 ):
     """Build a matplotlib Figure for the plot data."""
     import matplotlib.pyplot as plt
 
+    if dark:
+        bg = "#1e1e1e"
+        axis_bg = "#252526"
+        point_color = "#8b949e"
+        cds_color = "#f07178"
+        cds_edge = "#8b3a3f"
+        text_color = "#e6edf3"
+        muted_color = "#9da7b3"
+        spine_color = "#3c4048"
+    else:
+        bg = "#ffffff"
+        axis_bg = "#ffffff"
+        point_color = "#9aa5b1"
+        cds_color = "#c0392b"
+        cds_edge = "#5b1a14"
+        text_color = "#1f2933"
+        muted_color = "#4a5560"
+        spine_color = "#cbd2d9"
+
     fig, ax = plt.subplots(figsize=(8.0, 6.5))
+    fig.patch.set_facecolor(bg)
+    ax.set_facecolor(axis_bg)
 
     ordinary_indices = downsample_ordinary_indices(
         len(data.point_ids),
@@ -277,7 +299,7 @@ def create_figure(
     ox = [data.xs[i] for i in ordinary_indices if data.point_ids[i] not in data.selected_set]
     oy = [data.ys[i] for i in ordinary_indices if data.point_ids[i] not in data.selected_set]
     if ox:
-        ax.scatter(ox, oy, s=8, c="#9aa5b1", alpha=0.75, linewidths=0, label="points", zorder=1)
+        ax.scatter(ox, oy, s=8, c=point_color, alpha=0.75, linewidths=0, label="points", zorder=1)
 
     id_to_xy = {pid: (x, y) for pid, x, y in zip(data.point_ids, data.xs, data.ys)}
     sx = [id_to_xy[sid][0] for sid in data.selected_ids]
@@ -287,8 +309,8 @@ def create_figure(
             sx,
             sy,
             s=36,
-            c="#c0392b",
-            edgecolors="#5b1a14",
+            c=cds_color,
+            edgecolors=cds_edge,
             linewidths=0.4,
             label="CDS",
             zorder=3,
@@ -296,10 +318,10 @@ def create_figure(
 
     edges = cds_edges(data, enabled=show_cds_edges, k_limit=edge_k_limit)
     for x0, y0, x1, y1 in edges:
-        ax.plot([x0, x1], [y0, y1], color="#c0392b", alpha=0.35, linewidth=0.8, zorder=2)
+        ax.plot([x0, x1], [y0, y1], color=cds_color, alpha=0.45 if dark else 0.35, linewidth=0.8, zorder=2)
 
     ax.set_aspect("equal", adjustable="datalim")
-    ax.set_title(build_title(data), fontsize=12, pad=12)
+    ax.set_title(build_title(data), fontsize=12, pad=12, color=text_color)
     subtitle = build_subtitle(data)
     if subtitle:
         ax.text(
@@ -310,11 +332,17 @@ def create_figure(
             ha="center",
             va="bottom",
             fontsize=9,
-            color="#4a5560",
+            color=muted_color,
         )
-    ax.legend(loc="best", frameon=False)
-    ax.set_xlabel("x")
-    ax.set_ylabel("y")
+    legend = ax.legend(loc="best", frameon=False, labelcolor=text_color)
+    if legend is not None:
+        for text in legend.get_texts():
+            text.set_color(text_color)
+    ax.set_xlabel("x", color=text_color)
+    ax.set_ylabel("y", color=text_color)
+    ax.tick_params(colors=muted_color)
+    for spine in ax.spines.values():
+        spine.set_color(spine_color)
     fig.tight_layout()
     return fig
 

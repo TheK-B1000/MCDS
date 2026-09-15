@@ -25,6 +25,13 @@ from generators import GENERATOR_TYPES, generate, write_csv  # noqa: E402
 
 ALGORITHMS = ("marathe", "wan")
 
+# GUI display labels; CLI / solver still use ALGORITHMS ids.
+ALGORITHM_LABELS: dict[str, str] = {
+    "marathe": "Marathe",
+    "wan": "Wan–Alzoubi–Frieder",
+}
+ALGORITHM_IDS_BY_LABEL: dict[str, str] = {v: k for k, v in ALGORITHM_LABELS.items()}
+
 # Distribution -> which geometry fields are relevant in the GUI.
 DISTRIBUTION_FIELDS: dict[str, tuple[str, ...]] = {
     "uniform": ("width", "height", "density"),
@@ -63,27 +70,32 @@ def find_repo_root(start: Path | None = None) -> Path:
 def find_mcds_executable(repo_root: Path | None = None) -> Path:
     root = repo_root or find_repo_root()
     candidates = [
+        root / "cpp" / "build" / "mcds.exe",
+        root / "cpp" / "build" / "mcds",
+        root / "cpp" / "build" / "Release" / "mcds.exe",
+        root / "cpp" / "build-msvc" / "Release" / "mcds.exe",
+        root / "cpp" / "build-msvc" / "mcds.exe",
         root / "build" / "mcds.exe",
         root / "build" / "mcds",
         root / "build" / "Release" / "mcds.exe",
         root / "build" / "Debug" / "mcds.exe",
         root / "build-msvc" / "mcds.exe",
         root / "build-msvc" / "Release" / "mcds.exe",
-        root / "cpp" / "build" / "mcds.exe",
-        root / "cpp" / "build" / "mcds",
-        root / "cpp" / "build" / "Release" / "mcds.exe",
     ]
     env = os.environ.get("MCDS_EXECUTABLE")
     if env:
-        candidates.insert(0, Path(env))
-    for path in candidates:
-        if path.is_file():
-            return path
-    raise FileNotFoundError(
-        "C++ mcds executable not found. Build it first "
-        "(cmake -S cpp -B build && cmake --build build), "
-        "or set MCDS_EXECUTABLE."
-    )
+        env_path = Path(env)
+        if env_path.is_file():
+            return env_path
+    existing = [path for path in candidates if path.is_file()]
+    if not existing:
+        raise FileNotFoundError(
+            "C++ mcds executable not found. Build it first "
+            "(cmake -S cpp -B cpp/build && cmake --build cpp/build), "
+            "or set MCDS_EXECUTABLE."
+        )
+    # Prefer the newest binary so stale root/build copies do not hide newer ones.
+    return max(existing, key=lambda p: p.stat().st_mtime)
 
 
 def dataset_paths(work_dir: Path, label: str = "gui") -> tuple[Path, Path, Path]:

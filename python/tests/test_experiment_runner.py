@@ -60,14 +60,15 @@ class ExperimentRunnerTests(unittest.TestCase):
             self.assertIn("No experiments", summarize(missing))
             path = Path(tmp) / "exp.csv"
             path.write_text(
-                "distribution,n,status,cds_ratio,algorithm_ms,algorithm_neighbor_queries\n"
-                "uniform,100,ok,0.2,1.5,10\n"
-                "uniform,100,ok,0.4,2.5,30\n"
-                "uniform,100,solver_error,,, \n",
+                "algorithm,distribution,n,status,cds_size,cds_ratio,algorithm_ms,"
+                "algorithm_neighbor_queries,algorithm_candidates_examined,peak_memory_mb\n"
+                "marathe,uniform,100,ok,20,0.2,1.5,10,100,4.0\n"
+                "marathe,uniform,100,ok,40,0.4,2.5,30,200,4.1\n"
+                "marathe,uniform,100,solver_error,,,,,,\n",
                 encoding="utf-8",
             )
             text = summarize(path)
-            self.assertIn("uniform,100,3,2,1", text)
+            self.assertIn("marathe,uniform,100,3,2,1", text)
 
 
 if __name__ == "__main__":

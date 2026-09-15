@@ -25,6 +25,8 @@ if str(_PYTHON_DIR) not in sys.path:
 
 from generators import GENERATOR_TYPES  # noqa: E402
 from gui_support import (  # noqa: E402
+    ALGORITHM_IDS_BY_LABEL,
+    ALGORITHM_LABELS,
     ALGORITHMS,
     DISTRIBUTION_FIELDS,
     build_solver_command,
@@ -37,6 +39,33 @@ from gui_support import (  # noqa: E402
     write_dataset_with_metadata,
 )
 from visualization import VisualizationError, create_figure, prepare_plot_data  # noqa: E402
+
+
+# GUI chrome colors. Plots use create_figure(dark=...).
+_DARK = {
+    "bg": "#1e1e1e",
+    "panel": "#252526",
+    "field": "#2d2d30",
+    "fg": "#e6edf3",
+    "muted": "#9da7b3",
+    "border": "#3c4048",
+    "accent": "#3a3d41",
+    "select_bg": "#264f78",
+    "select_fg": "#ffffff",
+    "disabled": "#6e7681",
+}
+_LIGHT = {
+    "bg": "#f3f3f3",
+    "panel": "#ffffff",
+    "field": "#ffffff",
+    "fg": "#1f2933",
+    "muted": "#4a5560",
+    "border": "#cbd2d9",
+    "accent": "#e8e8e8",
+    "select_bg": "#cce4f7",
+    "select_fg": "#1f2933",
+    "disabled": "#9aa5b1",
+}
 
 
 class McdsGui(tk.Tk):
@@ -55,15 +84,17 @@ class McdsGui(tk.Tk):
         self._figure: Figure | None = None
         self._canvas: FigureCanvasTkAgg | None = None
         self._toolbar: NavigationToolbar2Tk | None = None
+        self._style = ttk.Style(self)
 
         self._build_vars()
+        self._apply_theme()
         self._build_layout()
         self._on_distribution_changed()
         self._set_status("Ready")
 
     def _build_vars(self) -> None:
         self.var_distribution = tk.StringVar(value="cluster_bridge")
-        self.var_algorithm = tk.StringVar(value="marathe")
+        self.var_algorithm = tk.StringVar(value=ALGORITHM_LABELS["marathe"])
         self.var_n = tk.IntVar(value=300)
         self.var_seed = tk.IntVar(value=7)
         self.var_radius = tk.DoubleVar(value=1.0)
@@ -78,6 +109,7 @@ class McdsGui(tk.Tk):
         self.var_bridge_fraction = tk.DoubleVar(value=0.15)
         self.var_bridge_width = tk.DoubleVar(value=0.5)
         self.var_show_edges = tk.BooleanVar(value=True)
+        self.var_dark_mode = tk.BooleanVar(value=True)
         self.var_status = tk.StringVar(value="")
 
         self.metric_vars = {
@@ -117,7 +149,16 @@ class McdsGui(tk.Tk):
         )
         self.cmb_distribution.bind("<<ComboboxSelected>>", lambda _e: self._on_distribution_changed())
         row("Distribution", self.cmb_distribution, 0)
-        row("Algorithm", ttk.Combobox(controls, textvariable=self.var_algorithm, values=list(ALGORITHMS), state="readonly"), 1)
+        row(
+            "Algorithm",
+            ttk.Combobox(
+                controls,
+                textvariable=self.var_algorithm,
+                values=[ALGORITHM_LABELS[a] for a in ALGORITHMS],
+                state="readonly",
+            ),
+            1,
+        )
         row("Point count", ttk.Entry(controls, textvariable=self.var_n), 2)
         row("Seed", ttk.Entry(controls, textvariable=self.var_seed), 3)
         row("Radius", ttk.Entry(controls, textvariable=self.var_radius), 4)
@@ -142,9 +183,18 @@ class McdsGui(tk.Tk):
         row("Corridor width", self.ent_corridor, 12)
         row("Bridge fraction", self.ent_bridge_frac, 13)
         row("Bridge width", self.ent_bridge_width, 14)
-        ttk.Checkbutton(controls, text="Show CDS edges", variable=self.var_show_edges).grid(
-            row=15, column=0, columnspan=2, sticky="w", pady=4
-        )
+        ttk.Checkbutton(
+            controls,
+            text="Show CDS edges",
+            variable=self.var_show_edges,
+            command=self._on_show_edges_toggled,
+        ).grid(row=15, column=0, columnspan=2, sticky="w", pady=4)
+        ttk.Checkbutton(
+            controls,
+            text="Dark mode",
+            variable=self.var_dark_mode,
+            command=self._on_theme_toggled,
+        ).grid(row=16, column=0, columnspan=2, sticky="w", pady=2)
 
         buttons = ttk.LabelFrame(left, text="Actions", padding=8)
         buttons.pack(fill=tk.X, pady=(8, 0))
@@ -189,10 +239,117 @@ class McdsGui(tk.Tk):
 
         self.plot_frame = ttk.Frame(right)
         self.plot_frame.pack(fill=tk.BOTH, expand=True)
-        status = ttk.Label(self, textvariable=self.var_status, anchor="w")
-        status.pack(fill=tk.X, padx=8, pady=(0, 6))
+        self.status_label = ttk.Label(self, textvariable=self.var_status, anchor="w")
+        self.status_label.pack(fill=tk.X, padx=8, pady=(0, 6))
 
         self._init_empty_plot()
+
+    def _palette(self) -> dict[str, str]:
+        return _DARK if self.var_dark_mode.get() else _LIGHT
+
+    def _apply_theme(self) -> None:
+        colors = self._palette()
+        # clam is the most reliably recolorable ttk theme on Windows.
+        try:
+            self._style.theme_use("clam")
+        except tk.TclError:
+            pass
+
+        self.configure(bg=colors["bg"])
+        self._style.configure(".", background=colors["panel"], foreground=colors["fg"], fieldbackground=colors["field"])
+        self._style.configure("TFrame", background=colors["panel"])
+        self._style.configure("TLabel", background=colors["panel"], foreground=colors["fg"])
+        self._style.configure("TCheckbutton", background=colors["panel"], foreground=colors["fg"])
+        self._style.configure(
+            "TLabelframe",
+            background=colors["panel"],
+            foreground=colors["fg"],
+            bordercolor=colors["border"],
+        )
+        self._style.configure("TLabelframe.Label", background=colors["panel"], foreground=colors["fg"])
+        self._style.configure(
+            "TButton",
+            background=colors["accent"],
+            foreground=colors["fg"],
+            bordercolor=colors["border"],
+            focusthickness=1,
+            focuscolor=colors["border"],
+        )
+        self._style.map(
+            "TButton",
+            background=[("active", colors["select_bg"]), ("disabled", colors["field"])],
+            foreground=[("disabled", colors["disabled"])],
+        )
+        self._style.configure(
+            "TEntry",
+            fieldbackground=colors["field"],
+            foreground=colors["fg"],
+            insertcolor=colors["fg"],
+            bordercolor=colors["border"],
+            lightcolor=colors["border"],
+            darkcolor=colors["border"],
+        )
+        self._style.map(
+            "TEntry",
+            fieldbackground=[("disabled", colors["accent"])],
+            foreground=[("disabled", colors["disabled"])],
+        )
+        self._style.configure(
+            "TCombobox",
+            fieldbackground=colors["field"],
+            foreground=colors["fg"],
+            background=colors["accent"],
+            arrowcolor=colors["fg"],
+            bordercolor=colors["border"],
+            lightcolor=colors["border"],
+            darkcolor=colors["border"],
+        )
+        self._style.map(
+            "TCombobox",
+            fieldbackground=[("readonly", colors["field"]), ("disabled", colors["accent"])],
+            foreground=[("disabled", colors["disabled"])],
+            selectbackground=[("readonly", colors["select_bg"])],
+            selectforeground=[("readonly", colors["select_fg"])],
+        )
+        self._style.configure("TPanedwindow", background=colors["bg"])
+        self._style.configure("Sash", sashthickness=6, background=colors["border"])
+        # Combobox dropdown list (tk Listbox, not ttk).
+        self.option_add("*TCombobox*Listbox.background", colors["field"])
+        self.option_add("*TCombobox*Listbox.foreground", colors["fg"])
+        self.option_add("*TCombobox*Listbox.selectBackground", colors["select_bg"])
+        self.option_add("*TCombobox*Listbox.selectForeground", colors["select_fg"])
+
+    def _style_toolbar(self) -> None:
+        if self._toolbar is None:
+            return
+        colors = self._palette()
+        try:
+            self._toolbar.configure(background=colors["panel"])
+        except tk.TclError:
+            pass
+        for child in self._toolbar.winfo_children():
+            try:
+                child.configure(background=colors["panel"])
+            except tk.TclError:
+                pass
+
+    def _on_theme_toggled(self) -> None:
+        self._apply_theme()
+        self._style_toolbar()
+        if self.csv_path.is_file() and self.result_path.is_file():
+            try:
+                self._refresh_plot()
+            except VisualizationError:
+                self._init_empty_plot()
+        else:
+            self._init_empty_plot()
+
+    def _on_show_edges_toggled(self) -> None:
+        if self.csv_path.is_file() and self.result_path.is_file():
+            try:
+                self._refresh_plot()
+            except VisualizationError:
+                pass
 
     def _field_widgets(self) -> dict[str, ttk.Entry]:
         return {
@@ -263,9 +420,19 @@ class McdsGui(tk.Tk):
             self.btn_run.configure(state=tk.DISABLED)
 
     def _init_empty_plot(self) -> None:
+        colors = self._palette()
         fig = Figure(figsize=(6, 5), dpi=100)
+        fig.patch.set_facecolor(colors["bg"])
         ax = fig.add_subplot(111)
-        ax.text(0.5, 0.5, "Generate or load points to begin", ha="center", va="center")
+        ax.set_facecolor(colors["panel"])
+        ax.text(
+            0.5,
+            0.5,
+            "Generate or load points to begin",
+            ha="center",
+            va="center",
+            color=colors["muted"],
+        )
         ax.set_axis_off()
         self._replace_figure(fig)
 
@@ -287,6 +454,7 @@ class McdsGui(tk.Tk):
         self._toolbar = NavigationToolbar2Tk(self._canvas, self.plot_frame, pack_toolbar=False)
         self._toolbar.update()
         self._toolbar.pack(side=tk.BOTTOM, fill=tk.X)
+        self._style_toolbar()
 
     def _clear_metrics(self) -> None:
         for var in self.metric_vars.values():
@@ -317,7 +485,11 @@ class McdsGui(tk.Tk):
         if not self.csv_path.is_file() or not self.result_path.is_file():
             return
         data = prepare_plot_data(self.csv_path, self.result_path)
-        fig = create_figure(data, show_cds_edges=self.var_show_edges.get())
+        fig = create_figure(
+            data,
+            show_cds_edges=self.var_show_edges.get(),
+            dark=self.var_dark_mode.get(),
+        )
         self._replace_figure(fig)
 
     def on_generate(self) -> None:
@@ -394,7 +566,7 @@ class McdsGui(tk.Tk):
             exe,
             self.csv_path,
             self.result_path,
-            algorithm=self.var_algorithm.get(),
+            algorithm=ALGORITHM_IDS_BY_LABEL.get(self.var_algorithm.get(), self.var_algorithm.get()),
             radius=float(self.var_radius.get()),
             check_connectivity_only=check_only,
         )

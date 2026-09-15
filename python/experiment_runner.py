@@ -524,24 +524,93 @@ def summarize(experiments_csv: Path) -> str:
     with experiments_csv.open("r", encoding="utf-8", newline="") as handle:
         rows = list(csv.DictReader(handle))
 
-    groups: dict[tuple[str, str], list[dict[str, str]]] = {}
+    groups: dict[tuple[str, str, str], list[dict[str, str]]] = {}
     for row in rows:
-        key = (row.get("distribution", "?"), row.get("n", "?"))
+        key = (row.get("algorithm", "?"), row.get("distribution", "?"), row.get("n", "?"))
         groups.setdefault(key, []).append(row)
 
-    lines = ["distribution,n,runs,ok,failures,mean_cds_ratio,median_algorithm_ms,mean_neighbor_queries"]
-    for (dist, n), items in sorted(groups.items(), key=lambda kv: (kv[0][0], int(kv[0][1]))):
+    lines = [
+        "algorithm,distribution,n,runs,ok,failures,"
+        "mean_cds_size,mean_cds_ratio,median_algorithm_ms,"
+        "mean_neighbor_queries,mean_candidates,mean_peak_memory_mb"
+    ]
+    for (algo, dist, n), items in sorted(
+        groups.items(), key=lambda kv: (kv[0][0], kv[0][1], int(float(kv[0][2])))
+    ):
         ok = [r for r in items if r.get("status") == "ok"]
         failures = len(items) - len(ok)
+
+        def mean_of(key: str) -> float:
+            vals = [float(r[key]) for r in ok if r.get(key) not in ("", None)]
+            return sum(vals) / len(vals) if vals else float("nan")
+
+        sizes = [float(r["cds_size"]) for r in ok if r.get("cds_size") not in ("", None)]
         ratios = [float(r["cds_ratio"]) for r in ok if r.get("cds_ratio") not in ("", None)]
         times = sorted(float(r["algorithm_ms"]) for r in ok if r.get("algorithm_ms") not in ("", None))
-        queries = [float(r["algorithm_neighbor_queries"]) for r in ok if r.get("algorithm_neighbor_queries") not in ("", None)]
-        mean_ratio = sum(ratios) / len(ratios) if ratios else float("nan")
         median_ms = times[len(times) // 2] if times else float("nan")
-        mean_q = sum(queries) / len(queries) if queries else float("nan")
+        mean_size = sum(sizes) / len(sizes) if sizes else float("nan")
+        mean_ratio = sum(ratios) / len(ratios) if ratios else float("nan")
         lines.append(
-            f"{dist},{n},{len(items)},{len(ok)},{failures},{mean_ratio:.6f},{median_ms:.4f},{mean_q:.1f}"
+            f"{algo},{dist},{n},{len(items)},{len(ok)},{failures},"
+            f"{mean_size:.4f},{mean_ratio:.6f},{median_ms:.4f},"
+            f"{mean_of('algorithm_neighbor_queries'):.1f},"
+            f"{mean_of('algorithm_candidates_examined'):.1f},"
+            f"{mean_of('peak_memory_mb'):.4f}"
         )
+    return "\n".join(lines) + "\n"
+
+
+def paired_comparison(experiments_csv: Path, left: str = "marathe", right: str = "wan") -> str:
+    """Compare two algorithms on identical dataset_csv paths."""
+    if not experiments_csv.is_file():
+        return "No experiments CSV found."
+    with experiments_csv.open("r", encoding="utf-8", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+
+    by_ds: dict[str, dict[str, dict[str, str]]] = {}
+    for row in rows:
+        if row.get("status") != "ok":
+            continue
+        ds = row.get("dataset_csv", "")
+        algo = row.get("algorithm", "")
+        if not ds or not algo:
+            continue
+        by_ds.setdefault(ds, {})[algo] = row
+
+    smaller = same = larger = 0
+    deltas_cds: list[float] = []
+    deltas_ms: list[float] = []
+    deltas_q: list[float] = []
+    for _ds, algos in by_ds.items():
+        if left not in algos or right not in algos:
+            continue
+        a = float(algos[left]["cds_size"])
+        b = float(algos[right]["cds_size"])
+        deltas_cds.append(b - a)
+        if b < a:
+            smaller += 1
+        elif b == a:
+            same += 1
+        else:
+            larger += 1
+        deltas_ms.append(float(algos[right]["algorithm_ms"]) - float(algos[left]["algorithm_ms"]))
+        deltas_q.append(
+            float(algos[right]["algorithm_neighbor_queries"])
+            - float(algos[left]["algorithm_neighbor_queries"])
+        )
+
+    def mean(xs: list[float]) -> float:
+        return sum(xs) / len(xs) if xs else float("nan")
+
+    lines = [
+        f"paired_datasets,{len(deltas_cds)}",
+        f"{right}_cds_smaller,{smaller}",
+        f"same_cds_size,{same}",
+        f"{right}_cds_larger,{larger}",
+        f"mean_delta_cds ({right}-{left}),{mean(deltas_cds):.4f}",
+        f"mean_delta_algorithm_ms,{mean(deltas_ms):.4f}",
+        f"mean_delta_neighbor_queries,{mean(deltas_q):.1f}",
+    ]
     return "\n".join(lines) + "\n"
 
 
@@ -644,20 +713,25 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config", required=True, help="experiment JSON config")
     parser.add_argument("--force", action="store_true", help="rerun even if run_id completed")
     parser.add_argument("--summary", action="store_true", help="print summary of experiments CSV and exit")
+    parser.add_argument("--paired", action="store_true", help="print Marathe vs Wan paired comparison")
     parser.add_argument("--no-memory", action="store_true", help="skip peak-memory measurement")
     args = parser.parse_args(argv)
 
     config_path = Path(args.config)
-    if args.summary:
+    if args.summary or args.paired:
         repo_root = find_repo_root()
         config = load_config(config_path)
         experiments_csv = repo_root / config.get("experiments_csv", "results/experiments.csv")
-        print(summarize(experiments_csv), end="")
+        if args.summary:
+            print(summarize(experiments_csv), end="")
+        if args.paired:
+            print(paired_comparison(experiments_csv), end="")
         return 0
 
     stats = run_campaign(config_path, force=args.force, measure_memory=not args.no_memory)
     print(json.dumps(stats, indent=2))
     print(summarize(Path(stats["experiments_csv"])), end="")
+    print(paired_comparison(Path(stats["experiments_csv"])), end="")
     return 0 if stats["runs_failed"] == 0 and stats["datasets_failed"] == 0 else 1
 
 
