@@ -26,6 +26,7 @@ add_library(mcds_core STATIC
     src/JsonIO.cpp
     src/algorithms/Marathe.cpp
     src/algorithms/Wan.cpp
+    src/algorithms/Funke.cpp
     src/ExactSmallMCDS.cpp
 )
 target_include_directories(mcds_core PUBLIC include)
@@ -68,4 +69,5 @@ mcds_add_test(test_connectivity)
 mcds_add_test(test_validator)
 mcds_add_test(test_marathe)
 mcds_add_test(test_wan)
+mcds_add_test(test_funke)
 mcds_add_test(test_exact_small)
