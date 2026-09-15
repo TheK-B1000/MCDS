@@ -241,17 +241,49 @@ The JSON result separates timing and neighbour-query counters by stage
 (`load_ms`, `index_build_ms`, `connectivity_ms`, `algorithm_ms`,
 `validation_ms`) so algorithm cost is not confused with I/O or validation.
 
+### Visualize
+
+```bash
+python python/visualization.py \
+    --points datasets/e2e_bridge_300.csv \
+    --result results/e2e_bridge_300.json \
+    --save results/e2e_bridge_300.png \
+    --no-show --show-cds-edges
+```
+
+### GUI
+
+```bash
+python python/gui.py
+```
+
+### Experiments
+
+```bash
+python python/experiment_runner.py --config experiments/smoke.json
+python python/experiment_runner.py --config experiments/smoke.json --summary
+python python/plots.py --experiments-csv results/experiments.csv --save-dir results/plots
+```
+
+Datasets are generated **once** per `(distribution, n, seed, params)` key and
+reused across algorithms. With `require_connected`, the runner retries
+`effective_seed = base_seed + attempt` up to a configured limit and records
+failures instead of dropping them.
+
+Peak memory is measured on the **C++ child process** (Windows: peak working
+set via `GetProcessMemoryInfo`; POSIX: `RUSAGE_CHILDREN` max RSS).
+
 ---
 
 ## Running tests
 
 ```bash
 ctest --test-dir build --output-on-failure
-python -m unittest python.tests.test_generators -v
+python -m unittest discover -s python/tests -v
 ```
 
 C++ suites: CSV, spatial index, connectivity, validator, Marathe.
-Python: generator determinism and geometric properties.
+Python: generators, visualization, GUI orchestration, experiment runner.
 
 ---
 
@@ -286,7 +318,7 @@ point set must outlive the index.
 
 ## Current status
 
-Done and tested through the Marathe end-to-end pipeline:
+Done and tested through visualization, GUI, and the smoke experiment pipeline:
 
 - [x] Deterministic Python point generation (five distributions)
 - [x] C++ CSV loading + spatial index + brute-force differential tests
@@ -294,9 +326,12 @@ Done and tested through the Marathe end-to-end pipeline:
 - [x] Independent CDS validator (domination + selected-only connectivity)
 - [x] Marathe CDOM documented from arXiv:math/9409226 and implemented
 - [x] Unified CLI with staged timing and JSON results
+- [x] Python visualization (CDS highlight, optional CDS edges, PNG export)
+- [x] Tkinter GUI orchestration layer
+- [x] Experiment runner with connected-input retries, resume, peak memory
+- [x] Basic experimental plots across distributions
 
 Not started (next milestones):
 
-- [ ] Python visualisation / GUI
-- [ ] Experiment runner and scaling campaign
-- [ ] Additional algorithms (Wan, Funke, Li) — only after Marathe stays green
+- [ ] Larger scaling campaign
+- [ ] Additional algorithms (Wan, Funke, Li) — source-first, after this baseline stays green
