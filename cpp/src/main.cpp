@@ -23,6 +23,7 @@
 #include "Validator.hpp"
 #include "algorithms/Marathe.hpp"
 #include "algorithms/Wan.hpp"
+#include "ExactSmallMCDS.hpp"
 
 namespace {
 
@@ -32,6 +33,7 @@ void printUsage() {
         "  mcds --input <file.csv> --algorithm <marathe|wan> [--radius R]\n"
         "       [--output results/out.json] [--pretty]\n"
         "  mcds --input <file.csv> --check-connectivity [--radius R]\n"
+        "  mcds --input <file.csv> --exact-small [--radius R] [--output out.json]\n"
         "\n"
         "options:\n"
         "  --input PATH           point-set CSV (required)\n"
@@ -40,6 +42,7 @@ void printUsage() {
         "  --output PATH          write JSON result (default: stdout)\n"
         "  --pretty               pretty-print JSON\n"
         "  --check-connectivity   report components and exit (no algorithm)\n"
+        "  --exact-small          exact MCDS for n<=16 (analysis only)\n"
         "  --help                 show this help\n");
 }
 
@@ -62,6 +65,7 @@ int main(int argc, char** argv) {
     double radius = 1.0;
     bool pretty = false;
     bool checkConnectivityOnly = false;
+    bool exactSmall = false;
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -106,6 +110,10 @@ int main(int argc, char** argv) {
             checkConnectivityOnly = true;
             continue;
         }
+        if (arg == "--exact-small") {
+            exactSmall = true;
+            continue;
+        }
         // Backward-compatible positional input: mcds file.csv
         if (!arg.empty() && arg[0] != '-') {
             if (!inputPath.empty()) {
@@ -128,7 +136,7 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "error: radius must be positive\n");
         return 2;
     }
-    if (!checkConnectivityOnly && algorithmName.empty()) {
+    if (!checkConnectivityOnly && !exactSmall && algorithmName.empty()) {
         // Default for the milestone: run marathe when no mode is specified,
         // matching the early `mcds input.csv` habit once the algorithm exists.
         algorithmName = "marathe";
@@ -139,7 +147,7 @@ int main(int argc, char** argv) {
         mcds::RunResult result;
         result.inputFile = inputPath;
         result.radius = radius;
-        result.algorithm = checkConnectivityOnly ? "none" : algorithmName;
+        result.algorithm = checkConnectivityOnly ? "none" : (exactSmall ? "exact_small" : algorithmName);
 
         mcds::Timer stage;
         const mcds::PointSet points = mcds::loadPointsCsvFile(inputPath);
@@ -193,8 +201,55 @@ int main(int argc, char** argv) {
             std::fprintf(stderr,
                          "error: input UDG is disconnected (%zu components); "
                          "refusing to run %s\n",
-                         result.componentCount, algorithmName.c_str());
+                         result.componentCount, result.algorithm.c_str());
             return 1;
+        }
+
+        if (exactSmall) {
+            // ANALYSIS ONLY: never used by Marathe/Wan production paths.
+            constexpr std::size_t kExactMaxN = 16;
+            if (points.size() > kExactMaxN) {
+                std::fprintf(stderr, "error: --exact-small requires n <= %zu (got %zu)\n", kExactMaxN,
+                             points.size());
+                return 2;
+            }
+            index.resetStats();
+            stage.restart();
+            const mcds::ExactSmallResult exact = mcds::exactSmallMCDS(points, radius, kExactMaxN);
+            result.algorithmMs = stage.elapsedMs();
+            result.algorithmNeighborQueries = 0;
+            result.algorithmCandidatesExamined = 0;
+            result.selectedIds = exact.selectedIds;
+            result.cdsSize = exact.optSize;
+            result.cdsRatio =
+                result.n == 0 ? 0.0 : static_cast<double>(result.cdsSize) / static_cast<double>(result.n);
+
+            index.resetStats();
+            stage.restart();
+            mcds::ValidationOptions vopts;
+            vopts.maxDiagnostics = 32;
+            const mcds::ValidationResult validation =
+                mcds::validateCDS(points, index, exact.selectedIds, radius, vopts);
+            result.validationMs = stage.elapsedMs();
+            result.validationNeighborQueries = index.stats().neighborQueries;
+            result.validationCandidatesExamined = index.stats().candidatesExamined;
+            result.validDominating = validation.dominating;
+            result.validConnected = validation.connected;
+            result.totalMs = totalTimer.elapsedMs();
+
+            if (outputPath.empty()) {
+                mcds::writeRunResultJson(std::cout, result, true);
+            } else {
+                std::ofstream out(outputPath);
+                if (!out) {
+                    std::fprintf(stderr, "error: cannot write '%s'\n", outputPath.c_str());
+                    return 1;
+                }
+                mcds::writeRunResultJson(out, result, pretty);
+                std::printf("wrote %s  opt_size=%zu  valid=%s\n", outputPath.c_str(), result.cdsSize,
+                            validation.valid() ? "true" : "false");
+            }
+            return validation.valid() ? 0 : 1;
         }
 
         auto algorithm = makeAlgorithm(algorithmName);

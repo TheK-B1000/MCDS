@@ -1,6 +1,8 @@
 # C++ build output
 build/
 cpp/build/
+cpp/build-msvc/
+build-msvc/
 *.obj
 *.o
 *.exe
@@ -18,6 +20,7 @@ venv/
 datasets/*.csv
 datasets/*.meta.json
 datasets/generated/
+datasets/exact_small/
 results/*.json
 results/*.csv
 results/*.png
