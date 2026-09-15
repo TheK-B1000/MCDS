@@ -1,0 +1,26 @@
+{
+  "algorithms": ["marathe"],
+  "distributions": [
+    "uniform",
+    "clustered",
+    "perturbed_grid",
+    "corridor",
+    "cluster_bridge"
+  ],
+  "sizes": [100, 300, 1000],
+  "seeds": [1, 2],
+  "radius": 1.0,
+  "require_connected": true,
+  "max_connectivity_attempts": 80,
+  "density": 5.0,
+  "distribution_parameters": {
+    "clustered": {"clusters": 4, "spread": 0.8},
+    "corridor": {"corridor_width": 3.0},
+    "cluster_bridge": {"clusters": 3, "spread": 0.45, "bridge_fraction": 0.2, "bridge_width": 0.6},
+    "perturbed_grid": {"jitter": 0.15}
+  },
+  "datasets_dir": "datasets/generated",
+  "results_dir": "results/runs",
+  "experiments_csv": "results/experiments.csv",
+  "manifest_path": "results/experiment_manifest.json"
+}
