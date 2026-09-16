@@ -715,6 +715,8 @@ def write_batch_state(
         status = "completed_with_failures"
     else:
         status = "completed"
+    # completed_run_ids only contains successful (status=ok) run IDs, including
+    # those loaded from a prior resume — so its size is cumulative successes.
     atomic_write_json(
         path,
         {
@@ -724,7 +726,10 @@ def write_batch_state(
             "interrupted": interrupted,
             "planned_runs": planned_runs,
             "completed_runs": len(completed_run_ids),
-            "successful_runs": int(stats.get("runs_ok", 0)),
+            "successful_runs": len(completed_run_ids),
+            "successful_this_invocation": int(stats.get("runs_ok", 0)),
+            "failed_this_invocation": int(stats.get("runs_failed", 0)),
+            "skipped_existing": int(stats.get("runs_skipped", 0)),
             "failed_runs": int(stats.get("runs_failed", 0)),
             "completed_run_ids": sorted(completed_run_ids),
             "stats": stats,
@@ -758,19 +763,34 @@ def preflight(
 
 def study_preview(config: dict[str, Any], specs: list[DatasetSpec], algorithms: list[str]) -> str:
     total_datasets = len(specs)
-    total_trials = total_datasets * len(algorithms)
+    logical_runs = total_datasets * len(algorithms)
     largest_n = max((spec.n for spec in specs), default=0)
     densities = sorted({spec.density for spec in specs if spec.density is not None})
+    timing_reps = max(1, int(config.get("timing_repetitions", 1)))
+    warmup = max(0, int(config.get("warmup_runs", 0)))
+    launches_per_logical = timing_reps + warmup
+    total_launches = logical_runs * launches_per_logical
     lines = [
         "STUDY PREVIEW",
-        f"  distributions: {len(config.get('distributions', []))}",
-        f"  sizes: {config.get('sizes', [])}",
-        f"  seeds: {config.get('seeds', [])}",
-        f"  densities: {densities}",
-        f"  algorithms: {algorithms}",
-        f"  unique datasets: {total_datasets}",
-        f"  total trials: {total_trials}",
-        f"  largest n: {largest_n}",
+        "",
+        f"Algorithms:              {len(algorithms)}  {algorithms}",
+        f"Distributions:           {len(config.get('distributions', []))}  {config.get('distributions', [])}",
+        f"Sizes:                   {config.get('sizes', [])}",
+        f"Seeds:                   {config.get('seeds', [])}",
+        f"Densities:               {densities}",
+        f"Radius:                  {config.get('radius', 1.0)}",
+        "",
+        f"Unique datasets:         {total_datasets}",
+        f"Logical algorithm runs:  {logical_runs}",
+        f"Measured repetitions:    {timing_reps} per run",
+        f"Warmups:                 {warmup} per run",
+        f"Total solver launches:   {total_launches}",
+        "",
+        f"Largest n:               {largest_n}",
+        f"Max runtime seconds:     {config.get('max_runtime_seconds', config.get('timeout_s'))}",
+        f"Max peak memory MB:      {config.get('max_peak_memory_mb', config.get('max_memory_mb'))}",
+        "",
+        "No experiments executed." if True else "",
     ]
     return "\n".join(lines)
 
@@ -960,11 +980,18 @@ def run_campaign(
     preview = study_preview(config, specs, algorithms)
     if dry_run:
         log_line(preview, progress=False, verbose=True)
+        timing_reps = max(1, int(config.get("timing_repetitions", 1)))
+        warmup = max(0, int(config.get("warmup_runs", 0)))
+        logical = len(specs) * len(algorithms)
         return {
             "dry_run": True,
             "preview": preview,
             "datasets": len(specs),
-            "trials": len(specs) * len(algorithms),
+            "logical_runs": logical,
+            "timing_repetitions": timing_reps,
+            "warmup_runs": warmup,
+            "solver_launches": logical * (timing_reps + warmup),
+            "trials": logical,
         }
 
     if not skip_preflight:

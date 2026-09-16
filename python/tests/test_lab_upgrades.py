@@ -75,8 +75,9 @@ class DensityExpandTests(unittest.TestCase):
         specs = expand_dataset_specs(config)
         text = study_preview(config, specs, ["marathe", "wan"])
         self.assertIn("STUDY PREVIEW", text)
-        self.assertIn("unique datasets: 4", text)
-        self.assertIn("total trials: 8", text)
+        self.assertIn("Unique datasets:         4", text)
+        self.assertIn("Logical algorithm runs:  8", text)
+        self.assertIn("Total solver launches:   8", text)
 
 
 class PairedShaTests(unittest.TestCase):
@@ -129,6 +130,46 @@ class ResumeCountTests(unittest.TestCase):
                 encoding="utf-8",
             )
             self.assertEqual(load_completed_run_ids(path), {"ok1", "ok2"})
+
+
+class BatchStateAccountingTests(unittest.TestCase):
+    def test_successful_runs_are_cumulative(self) -> None:
+        from experiment_runner import write_batch_state
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "batch_state.json"
+            write_batch_state(
+                path,
+                config_path=Path("cfg.json"),
+                stats={"runs_ok": 2, "runs_failed": 1, "runs_skipped": 5, "datasets_failed": 0},
+                completed_run_ids={"a", "b", "c", "d", "e", "f", "g"},
+                interrupted=False,
+                planned_runs=10,
+            )
+            state = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(state["successful_runs"], 7)
+            self.assertEqual(state["successful_this_invocation"], 2)
+            self.assertEqual(state["failed_this_invocation"], 1)
+            self.assertEqual(state["skipped_existing"], 5)
+            self.assertEqual(state["completed_runs"], 7)
+
+
+class DryRunLaunchCountTests(unittest.TestCase):
+    def test_preview_counts_warmup_and_reps(self) -> None:
+        config = {
+            "distributions": ["uniform"],
+            "sizes": [100],
+            "seeds": [1],
+            "density": 5.0,
+            "timing_repetitions": 3,
+            "warmup_runs": 1,
+        }
+        specs = expand_dataset_specs(config)
+        text = study_preview(config, specs, ["marathe", "wan"])
+        self.assertIn("Logical algorithm runs:  2", text)
+        self.assertIn("Measured repetitions:    3 per run", text)
+        self.assertIn("Warmups:                 1 per run", text)
+        self.assertIn("Total solver launches:   8", text)
 
 
 if __name__ == "__main__":
