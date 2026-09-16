@@ -184,6 +184,54 @@ def plot_quality_vs_query_cost(rows: list[dict[str, str]], out_path: Path) -> Pa
     return out_path
 
 
+def plot_explicit_vs_implicit(baseline_csv: Path, save_dir: Path) -> list[Path]:
+    if not baseline_csv.is_file():
+        return []
+    with baseline_csv.open("r", encoding="utf-8", newline="") as handle:
+        rows = [r for r in csv.DictReader(handle) if r.get("status") == "ok"]
+    if not rows:
+        return []
+    xs = [int(r["n"]) for r in rows]
+    mem_e = [float(r["explicit_est_memory_mb"]) for r in rows]
+    build_e = [float(r["explicit_build_ms"]) for r in rows]
+    build_i = [
+        float(r["implicit_index_build_ms"])
+        for r in rows
+        if r.get("implicit_index_build_ms") not in ("", None)
+    ]
+    outputs: list[Path] = []
+
+    fig, ax = plt.subplots(figsize=(7.5, 4.8))
+    ax.plot(xs, mem_e, marker="o", label="explicit (estimated bytes)")
+    ax.set_xlabel("n")
+    ax.set_ylabel("estimated memory (MB)")
+    ax.set_title("Explicit vs implicit memory (estimated explicit storage)")
+    ax.legend(frameon=False)
+    ax.grid(True, alpha=0.25)
+    fig.tight_layout()
+    out1 = save_dir / "explicit_vs_implicit_memory.png"
+    save_dir.mkdir(parents=True, exist_ok=True)
+    fig.savefig(out1, dpi=140, bbox_inches="tight")
+    plt.close(fig)
+    outputs.append(out1)
+
+    fig, ax = plt.subplots(figsize=(7.5, 4.8))
+    ax.plot(xs, build_e, marker="o", label="explicit construction (measured)")
+    if len(build_i) == len(xs):
+        ax.plot(xs, build_i, marker="s", label="implicit index build (measured)")
+    ax.set_xlabel("n")
+    ax.set_ylabel("ms")
+    ax.set_title("Explicit vs implicit build time")
+    ax.legend(frameon=False)
+    ax.grid(True, alpha=0.25)
+    fig.tight_layout()
+    out2 = save_dir / "explicit_vs_implicit_build_time.png"
+    fig.savefig(out2, dpi=140, bbox_inches="tight")
+    plt.close(fig)
+    outputs.append(out2)
+    return outputs
+
+
 def generate_plots(experiments_csv: Path, save_dir: Path, exact_csv: Path | None = None) -> list[Path]:
     rows = load_ok_rows(experiments_csv)
     if not rows:
@@ -228,6 +276,9 @@ def generate_plots(experiments_csv: Path, save_dir: Path, exact_csv: Path | None
         path = plot_approx_ratios(exact_csv, save_dir / "observed_approx_vs_n.png")
         if path is not None:
             outputs.append(path)
+    baseline = Path("results/explicit_vs_implicit.csv")
+    if baseline.is_file():
+        outputs.extend(plot_explicit_vs_implicit(baseline, save_dir))
     return outputs
 
 

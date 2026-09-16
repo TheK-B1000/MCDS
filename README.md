@@ -281,10 +281,10 @@ set via `GetProcessMemoryInfo`; POSIX: `RUSAGE_CHILDREN` max RSS).
 ctest --test-dir cpp/build --output-on-failure
 ```
 
-### Python environment (required for plots / GUI / visualization tests)
+### Python environment (required for plots / GUI / visualization / studies)
 
 Use **one** CPython interpreter (3.10+) for all Python work. On Windows, prefer
-the `py -3` launcher (or a venv) over MSYS Python, which often lacks packages:
+the `py -3` launcher (or a venv) over MSYS Python:
 
 ```bash
 py -3 -m pip install -r python/requirements.txt
@@ -292,9 +292,24 @@ py -3 python/check_env.py
 py -3 -m unittest discover -s python/tests -v
 ```
 
-`python/check_env.py` verifies `matplotlib` is importable on the active
-interpreter. Plotting, GUI, and visualization tests all use that same
-interpreter.
+`python/check_env.py` verifies `matplotlib` and `tqdm`.
+
+### Experiment laboratory
+
+```bash
+# Preview size (no execution)
+py -3 python/run_study.py --config experiments/pilot.json --dry-run
+
+# Full study with progress bar, resume, plots, summary
+py -3 python/run_study.py --config experiments/smoke.json
+
+# Resume after Ctrl+C: run the same command again
+```
+
+Permanent demo dataset: `datasets/demo/cluster_bridge_300.csv`.
+
+Recommended sequence: smoke → correctness → pilot → density → geometry →
+scaling → final (do not launch final until pilot looks sane).
 
 ---
 

@@ -21,13 +21,19 @@ import hashlib
 import json
 import os
 import platform
+import statistics
 import subprocess
 import sys
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+try:
+    from tqdm import tqdm
+except ImportError:
+    tqdm = None  # type: ignore[misc, assignment]
 
 _PYTHON_DIR = Path(__file__).resolve().parent
 if str(_PYTHON_DIR) not in sys.path:
@@ -40,6 +46,14 @@ from gui_support import (  # noqa: E402
     find_repo_root,
     run_solver,
 )
+from lab_utils import (  # noqa: E402
+    atomic_write_json,
+    config_sha256,
+    detect_build_type,
+    log_line,
+    machine_provenance,
+    sha256_file,
+)
 
 EXPERIMENT_COLUMNS = [
     "run_id",
@@ -50,6 +64,7 @@ EXPERIMENT_COLUMNS = [
     "effective_seed",
     "generation_attempt",
     "radius",
+    "density",
     "input_connected",
     "component_count",
     "cds_size",
@@ -65,11 +80,15 @@ EXPERIMENT_COLUMNS = [
     "valid_dominating",
     "valid_connected",
     "dataset_csv",
+    "dataset_sha256",
     "result_json",
     "exit_code",
     "status",
     "error",
 ]
+
+EXIT_TIMEOUT = 124
+EXIT_MEMORY_LIMIT = 125
 
 
 @dataclass
@@ -85,9 +104,14 @@ class DatasetSpec:
         digest = hashlib.sha1(param_blob.encode("utf-8")).hexdigest()[:8]
         return f"{self.distribution}_n{self.n}_seed{self.base_seed}_{digest}"
 
+    @property
+    def density(self) -> float | None:
+        value = self.params.get("density")
+        return float(value) if value is not None else None
+
 
 def load_config(path: Path) -> dict[str, Any]:
-    with path.open("r", encoding="utf-8") as handle:
+    with path.open("r", encoding="utf-8-sig") as handle:
         return json.load(handle)
 
 
@@ -101,22 +125,43 @@ def write_sidecar(meta_path: Path, payload: dict[str, Any]) -> None:
     meta_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
-def measure_peak_memory_mb(command: list[str], timeout_s: float | None = None) -> tuple[subprocess.CompletedProcess[str], float | None]:
+def measure_peak_memory_mb(
+    command: list[str],
+    timeout_s: float | None = None,
+    max_peak_memory_mb: float | None = None,
+) -> tuple[subprocess.CompletedProcess[str], float | None]:
     """Run a child process and estimate peak working-set / RSS in megabytes.
 
     Windows: polls ``GetProcessMemoryInfo`` WorkingSetSize while the child runs.
-    POSIX: uses ``resource.getrusage(RUSAGE_CHILDREN).ru_maxrss`` after exit
-    (Linux: kilobytes; macOS: bytes).
+    POSIX: polls ``/proc/pid/status`` VmRSS when available, else ``ru_maxrss`` after exit.
 
     Returns ``(completed_process, peak_memory_mb_or_None)``.
+    Exit code 124 = timeout, 125 = memory limit exceeded.
     """
     if platform.system() == "Windows":
-        return _measure_peak_memory_windows(command, timeout_s)
-    return _measure_peak_memory_posix(command, timeout_s)
+        return _measure_peak_memory_windows(command, timeout_s, max_peak_memory_mb)
+    return _measure_peak_memory_posix(command, timeout_s, max_peak_memory_mb)
+
+
+def _read_proc_rss_kb(pid: int) -> int | None:
+    status_path = Path(f"/proc/{pid}/status")
+    if not status_path.is_file():
+        return None
+    try:
+        for line in status_path.read_text(encoding="utf-8").splitlines():
+            if line.startswith("VmRSS:"):
+                return int(line.split()[1])
+            if line.startswith("VmHWM:"):
+                return int(line.split()[1])
+    except (OSError, ValueError):
+        return None
+    return None
 
 
 def _measure_peak_memory_windows(
-    command: list[str], timeout_s: float | None
+    command: list[str],
+    timeout_s: float | None,
+    max_peak_memory_mb: float | None,
 ) -> tuple[subprocess.CompletedProcess[str], float | None]:
     import ctypes
     from ctypes import wintypes
@@ -137,6 +182,7 @@ def _measure_peak_memory_windows(
 
     PROCESS_QUERY_INFORMATION = 0x0400
     PROCESS_VM_READ = 0x0010
+    limit_bytes = None if max_peak_memory_mb is None else int(max_peak_memory_mb * 1024 * 1024)
 
     psapi = ctypes.WinDLL("psapi")
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -163,29 +209,29 @@ def _measure_peak_memory_windows(
     handle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, False, proc.pid)
     peak = 0
     deadline = None if timeout_s is None else time.time() + timeout_s
+    memory_limited = False
+    timed_out = False
     try:
         while True:
             if handle:
                 counters = PROCESS_MEMORY_COUNTERS()
                 counters.cb = ctypes.sizeof(PROCESS_MEMORY_COUNTERS)
                 if GetProcessMemoryInfo(handle, ctypes.byref(counters), counters.cb):
-                    peak = max(
-                        peak,
-                        int(counters.PeakWorkingSetSize),
-                        int(counters.WorkingSetSize),
-                    )
+                    current = max(int(counters.PeakWorkingSetSize), int(counters.WorkingSetSize))
+                    peak = max(peak, current)
+                    if limit_bytes is not None and current > limit_bytes:
+                        memory_limited = True
+                        proc.kill()
+                        break
             if proc.poll() is not None:
                 break
             if deadline is not None and time.time() > deadline:
+                timed_out = True
                 proc.kill()
-                stdout, stderr = proc.communicate()
-                return (
-                    subprocess.CompletedProcess(command, 124, stdout or "", stderr or "timeout"),
-                    peak / (1024.0 * 1024.0) if peak else None,
-                )
+                break
             time.sleep(0.01)
         stdout, stderr = proc.communicate()
-        if handle:
+        if handle and not memory_limited:
             counters = PROCESS_MEMORY_COUNTERS()
             counters.cb = ctypes.sizeof(PROCESS_MEMORY_COUNTERS)
             if GetProcessMemoryInfo(handle, ctypes.byref(counters), counters.cb):
@@ -194,8 +240,15 @@ def _measure_peak_memory_windows(
                     int(counters.PeakWorkingSetSize),
                     int(counters.WorkingSetSize),
                 )
+        exit_code = proc.returncode if proc.returncode is not None else 1
+        if memory_limited:
+            exit_code = EXIT_MEMORY_LIMIT
+            stderr = (stderr or "") + "\nmemory limit exceeded"
+        elif timed_out:
+            exit_code = EXIT_TIMEOUT
+            stderr = (stderr or "") + "\ntimeout"
         return (
-            subprocess.CompletedProcess(command, proc.returncode, stdout or "", stderr or ""),
+            subprocess.CompletedProcess(command, exit_code, stdout or "", stderr or ""),
             peak / (1024.0 * 1024.0) if peak else None,
         )
     finally:
@@ -206,19 +259,61 @@ def _measure_peak_memory_windows(
 
 
 def _measure_peak_memory_posix(
-    command: list[str], timeout_s: float | None
+    command: list[str],
+    timeout_s: float | None,
+    max_peak_memory_mb: float | None,
 ) -> tuple[subprocess.CompletedProcess[str], float | None]:
     import resource
 
-    completed = subprocess.run(command, capture_output=True, text=True, timeout=timeout_s, check=False)
+    limit_bytes = None if max_peak_memory_mb is None else int(max_peak_memory_mb * 1024 * 1024)
+    proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    peak_kb = 0
+    deadline = None if timeout_s is None else time.time() + timeout_s
+    memory_limited = False
+    timed_out = False
+    try:
+        while True:
+            rss_kb = _read_proc_rss_kb(proc.pid)
+            if rss_kb is not None:
+                peak_kb = max(peak_kb, rss_kb)
+                if limit_bytes is not None and rss_kb * 1024 > limit_bytes:
+                    memory_limited = True
+                    proc.kill()
+                    break
+            if proc.poll() is not None:
+                break
+            if deadline is not None and time.time() > deadline:
+                timed_out = True
+                proc.kill()
+                break
+            time.sleep(0.01)
+        stdout, stderr = proc.communicate()
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            stdout, stderr = proc.communicate()
+
     usage = resource.getrusage(resource.RUSAGE_CHILDREN)
     rss = float(usage.ru_maxrss)
-    # Linux reports KB; macOS reports bytes.
     if sys.platform == "darwin":
-        mb = rss / (1024.0 * 1024.0)
+        usage_mb = rss / (1024.0 * 1024.0)
     else:
-        mb = rss / 1024.0
-    return completed, mb if mb > 0 else None
+        usage_mb = rss / 1024.0
+        if peak_kb:
+            usage_mb = max(usage_mb, peak_kb / 1024.0)
+
+    exit_code = proc.returncode if proc.returncode is not None else 1
+    if memory_limited:
+        exit_code = EXIT_MEMORY_LIMIT
+        stderr = (stderr or "") + "\nmemory limit exceeded"
+    elif timed_out:
+        exit_code = EXIT_TIMEOUT
+        stderr = (stderr or "") + "\ntimeout"
+
+    return (
+        subprocess.CompletedProcess(command, exit_code, stdout or "", stderr or ""),
+        usage_mb if usage_mb > 0 else None,
+    )
 
 
 def check_connected(
@@ -261,7 +356,6 @@ def ensure_connected_dataset(
 
         if not csv_path.is_file():
             gen_kwargs = dict(spec.params)
-            # Pull known generate() kwargs; ignore unknown keys gently.
             allowed = {
                 "density",
                 "width",
@@ -282,6 +376,9 @@ def ensure_connected_dataset(
         else:
             params = spec.params
 
+        dataset_hash = sha256_file(csv_path)
+        density = params.get("density", spec.params.get("density"))
+
         connected = True
         conn_result = None
         error = None
@@ -295,7 +392,9 @@ def ensure_connected_dataset(
             "effective_seed": effective_seed,
             "attempt": attempt,
             "radius": spec.radius,
+            "density": density,
             "connected": connected,
+            "dataset_sha256": dataset_hash,
             "generator_parameters": params,
             "component_count": None if conn_result is None else conn_result.get("component_count"),
         }
@@ -311,11 +410,10 @@ def ensure_connected_dataset(
                 "meta": meta,
             }
 
-        # Not connected: try next seed. Keep the CSV for inspection but continue.
         continue
 
     return {
-        "status": "connectivity_exhausted",
+        "status": "connectivity_retry_exhausted",
         "csv_path": None,
         "meta_path": None,
         "meta": {
@@ -325,7 +423,9 @@ def ensure_connected_dataset(
             "effective_seed": None,
             "attempt": max_attempts,
             "radius": spec.radius,
+            "density": spec.params.get("density"),
             "connected": False,
+            "dataset_sha256": "",
             "generator_parameters": spec.params,
         },
         "error": f"no connected instance in {max_attempts} attempts",
@@ -358,6 +458,29 @@ def append_experiment_row(experiments_csv: Path, row: dict[str, Any]) -> None:
         writer.writerow({k: row.get(k, "") for k in EXPERIMENT_COLUMNS})
 
 
+def _status_from_exit(exit_code: int, *, has_result: bool, valid: bool) -> tuple[str, str]:
+    if exit_code == EXIT_TIMEOUT:
+        return "timeout", "solver timed out"
+    if exit_code == EXIT_MEMORY_LIMIT:
+        return "memory_limit", "peak memory limit exceeded"
+    if not has_result:
+        return ("invalid_json" if exit_code == 0 else "solver_error"), "missing result JSON"
+    if exit_code != 0:
+        return "solver_error", f"nonzero exit ({exit_code})"
+    if not valid:
+        return "validation_failure", "CDS failed independent validation"
+    return "ok", ""
+
+
+def _parse_solver_json(result_json: Path) -> tuple[dict[str, Any] | None, str | None]:
+    if not result_json.is_file():
+        return None, "missing result JSON"
+    try:
+        return json.loads(result_json.read_text(encoding="utf-8")), None
+    except json.JSONDecodeError as exc:
+        return None, f"invalid solver JSON: {exc}"
+
+
 def run_algorithm_trial(
     executable: Path,
     algorithm: str,
@@ -367,10 +490,16 @@ def run_algorithm_trial(
     radius: float,
     *,
     measure_memory: bool = True,
+    timeout_s: float | None = None,
+    max_memory_mb: float | None = None,
+    timing_repetitions: int = 1,
+    warmup_runs: int = 0,
 ) -> dict[str, Any]:
     results_dir.mkdir(parents=True, exist_ok=True)
     rid = run_id_for(algorithm, csv_path)
     result_json = results_dir / f"{rid}.json"
+    timings_json = results_dir / f"{rid}.timings.json"
+
     inv = build_solver_command(
         executable,
         csv_path,
@@ -381,27 +510,87 @@ def run_algorithm_trial(
     )
 
     peak_mb: float | None = None
-    if measure_memory:
-        completed, peak_mb = measure_peak_memory_mb(inv.command)
+    timing_raw_ms: list[float] = []
+    outcome_exit = 0
+    outcome_stderr = ""
+    result: dict[str, Any] | None = None
+    error: str | None = None
+
+    reps = max(1, int(timing_repetitions))
+    warmups = max(0, int(warmup_runs))
+    multi_timing = reps > 1 or warmups > 0
+
+    if multi_timing:
+        for _ in range(warmups):
+            run_solver(inv, timeout_s=timeout_s)
+
+        for rep_idx in range(reps):
+            is_last = rep_idx == reps - 1
+            use_memory = measure_memory and is_last
+            if use_memory:
+                completed, peak_mb = measure_peak_memory_mb(
+                    inv.command,
+                    timeout_s=timeout_s,
+                    max_peak_memory_mb=max_memory_mb,
+                )
+                outcome_exit = completed.returncode
+                outcome_stderr = completed.stderr or ""
+                parsed, parse_err = _parse_solver_json(result_json)
+                if parsed is not None:
+                    algo_ms = parsed.get("algorithm_ms")
+                    if algo_ms is not None:
+                        timing_raw_ms.append(float(algo_ms))
+                    if is_last:
+                        result = parsed
+                elif parse_err:
+                    error = parse_err
+            else:
+                outcome = run_solver(inv, timeout_s=timeout_s)
+                outcome_exit = outcome.exit_code
+                outcome_stderr = outcome.stderr or ""
+                if outcome.result is not None:
+                    algo_ms = outcome.result.get("algorithm_ms")
+                    if algo_ms is not None:
+                        timing_raw_ms.append(float(algo_ms))
+                    if is_last:
+                        result = outcome.result
+                elif is_last:
+                    error = outcome.error
+    elif measure_memory:
+        completed, peak_mb = measure_peak_memory_mb(
+            inv.command,
+            timeout_s=timeout_s,
+            max_peak_memory_mb=max_memory_mb,
+        )
         outcome_exit = completed.returncode
-        outcome_stdout = completed.stdout or ""
         outcome_stderr = completed.stderr or ""
-        result = None
-        error = None
-        if result_json.is_file():
-            try:
-                result = json.loads(result_json.read_text(encoding="utf-8"))
-            except json.JSONDecodeError as exc:
-                error = f"invalid solver JSON: {exc}"
+        result, error = _parse_solver_json(result_json)
         if outcome_exit != 0 and error is None:
-            error = (outcome_stderr or outcome_stdout or f"exit {outcome_exit}").strip()
+            error = (outcome_stderr or completed.stdout or f"exit {outcome_exit}").strip()
     else:
-        outcome = run_solver(inv)
+        outcome = run_solver(inv, timeout_s=timeout_s)
         outcome_exit = outcome.exit_code
-        outcome_stdout = outcome.stdout
-        outcome_stderr = outcome.stderr
+        outcome_stderr = outcome.stderr or ""
         result = outcome.result
         error = outcome.error
+
+    if timing_raw_ms:
+        atomic_write_json(
+            timings_json,
+            {
+                "run_id": rid,
+                "algorithm": algorithm,
+                "dataset_csv": str(csv_path),
+                "warmup_runs": warmups,
+                "timing_repetitions": reps,
+                "timing_raw_ms": timing_raw_ms,
+                "timing_median_ms": statistics.median(timing_raw_ms),
+            },
+        )
+
+    density = meta.get("density")
+    if density is None:
+        density = (meta.get("generator_parameters") or {}).get("density")
 
     row: dict[str, Any] = {
         "run_id": rid,
@@ -412,17 +601,20 @@ def run_algorithm_trial(
         "effective_seed": meta.get("effective_seed"),
         "generation_attempt": meta.get("attempt"),
         "radius": radius,
+        "density": density,
         "dataset_csv": str(csv_path),
+        "dataset_sha256": meta.get("dataset_sha256", ""),
         "result_json": str(result_json) if result_json.is_file() else "",
         "exit_code": outcome_exit,
         "peak_memory_mb": f"{peak_mb:.4f}" if peak_mb is not None else "",
     }
 
     if result is None:
+        status, err = _status_from_exit(outcome_exit, has_result=False, valid=False)
         row.update(
             {
-                "status": "solver_error" if outcome_exit != 0 else "invalid_json",
-                "error": error or "missing result JSON",
+                "status": status,
+                "error": error or err or "missing result JSON",
                 "input_connected": "",
                 "component_count": "",
                 "cds_size": "",
@@ -435,14 +627,13 @@ def run_algorithm_trial(
 
     valid_d = bool(result.get("valid_dominating"))
     valid_c = bool(result.get("valid_connected"))
-    status = "ok"
-    err = ""
-    if outcome_exit != 0:
-        status = "solver_error"
-        err = error or "nonzero exit"
-    elif not valid_d or not valid_c:
-        status = "validation_failure"
-        err = "CDS failed independent validation"
+    status, err = _status_from_exit(outcome_exit, has_result=True, valid=valid_d and valid_c)
+    if error and status != "ok":
+        err = error
+
+    algorithm_ms = result.get("algorithm_ms")
+    if timing_raw_ms:
+        algorithm_ms = statistics.median(timing_raw_ms)
 
     row.update(
         {
@@ -452,7 +643,7 @@ def run_algorithm_trial(
             "cds_ratio": result.get("cds_ratio"),
             "load_ms": result.get("load_ms"),
             "index_build_ms": result.get("index_build_ms"),
-            "algorithm_ms": result.get("algorithm_ms"),
+            "algorithm_ms": algorithm_ms,
             "validation_ms": result.get("validation_ms"),
             "total_ms": result.get("total_ms"),
             "algorithm_neighbor_queries": result.get("algorithm_neighbor_queries"),
@@ -463,58 +654,125 @@ def run_algorithm_trial(
             "error": err,
         }
     )
-    _ = outcome_stdout
+    _ = outcome_stderr
     return row
 
 
 def expand_dataset_specs(config: dict[str, Any]) -> list[DatasetSpec]:
     specs: list[DatasetSpec] = []
     dist_params = config.get("distribution_parameters") or {}
-    base_density = config.get("density", 2.0)
+    densities = config.get("densities")
+    if densities is None:
+        densities = [config.get("density", 2.0)]
     radius = float(config.get("radius", 1.0))
-    for distribution in config["distributions"]:
-        params = {"density": base_density}
-        params.update(dist_params.get(distribution, {}))
-        for n in config["sizes"]:
-            for seed in config["seeds"]:
-                specs.append(
-                    DatasetSpec(
-                        distribution=distribution,
-                        n=int(n),
-                        base_seed=int(seed),
-                        radius=radius,
-                        params=dict(params),
+    for density in densities:
+        for distribution in config["distributions"]:
+            params = {"density": density}
+            params.update(dist_params.get(distribution, {}))
+            for n in config["sizes"]:
+                for seed in config["seeds"]:
+                    specs.append(
+                        DatasetSpec(
+                            distribution=distribution,
+                            n=int(n),
+                            base_seed=int(seed),
+                            radius=radius,
+                            params=dict(params),
+                        )
                     )
-                )
     return specs
 
 
 def write_manifest(path: Path, config: dict[str, Any], repo_root: Path, executable: Path) -> None:
-    exe_hash = ""
-    try:
-        data = executable.read_bytes()
-        exe_hash = hashlib.sha256(data).hexdigest()
-    except OSError:
-        pass
     payload = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "os": platform.platform(),
-        "python": sys.version,
-        "executable": str(executable),
-        "executable_sha256": exe_hash,
+        "config_sha256": config_sha256(config),
+        **machine_provenance(repo_root, executable),
         "repo_root": str(repo_root),
         "config": config,
     }
-    # Best-effort git commit.
+    atomic_write_json(path, payload)
+
+
+def write_batch_manifest(study_dir: Path, config: dict[str, Any], repo_root: Path, executable: Path) -> Path:
+    path = study_dir / "batch_manifest.json"
+    write_manifest(path, config, repo_root, executable)
+    return path
+
+
+def write_batch_state(
+    path: Path,
+    *,
+    config_path: Path,
+    stats: dict[str, Any],
+    completed_run_ids: set[str],
+    interrupted: bool = False,
+    planned_runs: int | None = None,
+) -> None:
+    if interrupted:
+        status = "interrupted"
+    elif int(stats.get("runs_failed", 0)) > 0 or int(stats.get("datasets_failed", 0)) > 0:
+        status = "completed_with_failures"
+    else:
+        status = "completed"
+    atomic_write_json(
+        path,
+        {
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "config_path": str(config_path),
+            "status": status,
+            "interrupted": interrupted,
+            "planned_runs": planned_runs,
+            "completed_runs": len(completed_run_ids),
+            "successful_runs": int(stats.get("runs_ok", 0)),
+            "failed_runs": int(stats.get("runs_failed", 0)),
+            "completed_run_ids": sorted(completed_run_ids),
+            "stats": stats,
+        },
+    )
+
+
+def preflight(
+    config: dict[str, Any],
+    executable: Path,
+    repo_root: Path,
+    *,
+    verbose: bool = True,
+    show_progress: bool = False,
+) -> list[str]:
+    """Run preflight checks. Raises on fatal failure; returns warning strings."""
     try:
-        commit = subprocess.check_output(
-            ["git", "rev-parse", "HEAD"], cwd=str(repo_root), text=True
-        ).strip()
-        payload["git_commit"] = commit
-    except Exception:  # noqa: BLE001
-        payload["git_commit"] = None
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        from preflight import PreflightError, run_preflight  # noqa: WPS433
+    except ImportError:
+        log_line("preflight module not found; skipping preflight checks.", progress=show_progress, verbose=verbose)
+        return []
+    try:
+        result = run_preflight(
+            config, executable, repo_root, verbose=verbose, show_progress=show_progress
+        )
+        return list(result) if result else []
+    except PreflightError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(f"preflight failed: {exc}") from exc
+
+def study_preview(config: dict[str, Any], specs: list[DatasetSpec], algorithms: list[str]) -> str:
+    total_datasets = len(specs)
+    total_trials = total_datasets * len(algorithms)
+    largest_n = max((spec.n for spec in specs), default=0)
+    densities = sorted({spec.density for spec in specs if spec.density is not None})
+    lines = [
+        "STUDY PREVIEW",
+        f"  distributions: {len(config.get('distributions', []))}",
+        f"  sizes: {config.get('sizes', [])}",
+        f"  seeds: {config.get('seeds', [])}",
+        f"  densities: {densities}",
+        f"  algorithms: {algorithms}",
+        f"  unique datasets: {total_datasets}",
+        f"  total trials: {total_trials}",
+        f"  largest n: {largest_n}",
+    ]
+    return "\n".join(lines)
 
 
 def summarize(experiments_csv: Path) -> str:
@@ -560,8 +818,15 @@ def summarize(experiments_csv: Path) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _pair_key(row: dict[str, str]) -> str:
+    sha = row.get("dataset_sha256", "").strip()
+    if sha:
+        return sha
+    return row.get("dataset_csv", "")
+
+
 def paired_comparison(experiments_csv: Path, left: str = "marathe", right: str = "wan") -> str:
-    """Compare two algorithms on identical dataset_csv paths."""
+    """Compare two algorithms on identical datasets (prefer dataset_sha256)."""
     if not experiments_csv.is_file():
         return "No experiments CSV found."
     with experiments_csv.open("r", encoding="utf-8", newline="") as handle:
@@ -571,7 +836,7 @@ def paired_comparison(experiments_csv: Path, left: str = "marathe", right: str =
     for row in rows:
         if row.get("status") != "ok":
             continue
-        ds = row.get("dataset_csv", "")
+        ds = _pair_key(row)
         algo = row.get("algorithm", "")
         if not ds or not algo:
             continue
@@ -638,22 +903,88 @@ def all_paired_comparisons(experiments_csv: Path) -> str:
     return "".join(chunks) if chunks else paired_comparison(experiments_csv)
 
 
-def run_campaign(config_path: Path, *, force: bool = False, measure_memory: bool = True) -> dict[str, Any]:
+def run_campaign(
+    config_path: Path,
+    *,
+    force: bool = False,
+    measure_memory: bool = True,
+    show_progress: bool = True,
+    verbose: bool = True,
+    dry_run: bool = False,
+    skip_preflight: bool = False,
+) -> dict[str, Any]:
     repo_root = find_repo_root()
     config = load_config(config_path)
     executable = find_mcds_executable(repo_root)
 
+    if detect_build_type(executable) == "Debug":
+        log_line(
+            "WARNING: solver executable appears to be a Debug build; timing results may be unreliable.",
+            progress=show_progress,
+            verbose=verbose,
+        )
+
+    study_dir_cfg = config.get("study_dir")
+    study_dir = (repo_root / study_dir_cfg).resolve() if study_dir_cfg else None
+    if study_dir is not None:
+        study_dir.mkdir(parents=True, exist_ok=True)
+
     datasets_dir = repo_root / config.get("datasets_dir", "datasets/generated")
     results_dir = repo_root / config.get("results_dir", "results/runs")
     experiments_csv = repo_root / config.get("experiments_csv", "results/experiments.csv")
-    manifest_path = repo_root / config.get("manifest_path", "results/experiment_manifest.json")
-
-    write_manifest(manifest_path, config, repo_root, executable)
+    manifest_path = (
+        study_dir / "batch_manifest.json"
+        if study_dir is not None
+        else repo_root / config.get("manifest_path", "results/experiment_manifest.json")
+    )
+    batch_state_path = (
+        study_dir / "batch_state.json"
+        if study_dir is not None
+        else repo_root / config.get("batch_state_path", "results/batch_state.json")
+    )
 
     require_connected = bool(config.get("require_connected", True))
     max_attempts = int(config.get("max_connectivity_attempts", 100))
     algorithms = list(config.get("algorithms", ["marathe"]))
     specs = expand_dataset_specs(config)
+
+    timeout_s = config.get("max_runtime_seconds", config.get("timeout_s"))
+    if timeout_s is not None:
+        timeout_s = float(timeout_s)
+    max_memory_mb = config.get("max_peak_memory_mb", config.get("max_memory_mb"))
+    if max_memory_mb is not None:
+        max_memory_mb = float(max_memory_mb)
+    timing_repetitions = int(config.get("timing_repetitions", 1))
+    warmup_runs = int(config.get("warmup_runs", 0))
+
+    preview = study_preview(config, specs, algorithms)
+    if dry_run:
+        log_line(preview, progress=False, verbose=True)
+        return {
+            "dry_run": True,
+            "preview": preview,
+            "datasets": len(specs),
+            "trials": len(specs) * len(algorithms),
+        }
+
+    if not skip_preflight:
+        try:
+            for msg in preflight(config, executable, repo_root, verbose=verbose, show_progress=show_progress):
+                log_line(msg, progress=show_progress, verbose=verbose)
+        except Exception as exc:  # noqa: BLE001 — PreflightError or RuntimeError
+            log_line(f"PREFLIGHT FAILED: {exc}", progress=False, verbose=True)
+            return {
+                "preflight_failed": True,
+                "error": str(exc),
+                "datasets_ok": 0,
+                "datasets_failed": 0,
+                "runs_ok": 0,
+                "runs_failed": 0,
+                "runs_skipped": 0,
+                "rows": 0,
+            }
+
+    write_manifest(manifest_path, config, repo_root, executable)
 
     completed = set() if force else load_completed_run_ids(experiments_csv)
 
@@ -666,69 +997,183 @@ def run_campaign(config_path: Path, *, force: bool = False, measure_memory: bool
         "rows": 0,
     }
 
-    # Stage 1+2: datasets
-    prepared: list[dict[str, Any]] = []
-    for spec in specs:
-        info = ensure_connected_dataset(
-            spec,
-            datasets_dir,
-            executable,
-            require_connected=require_connected,
-            max_attempts=max_attempts,
+    interrupted = False
+    progress_enabled = show_progress and tqdm is not None
+    postfix = {"ok": 0, "fail": 0, "skip": 0}
+
+    total_trials = len(specs) * len(algorithms)
+    initial = min(len(completed), total_trials) if not force else 0
+    bar = None
+    if progress_enabled:
+        bar = tqdm(
+            total=total_trials,
+            initial=initial,
+            desc="experiments",
+            unit="trial",
+            dynamic_ncols=True,
         )
-        if info["status"] != "ok":
-            stats["datasets_failed"] += 1
+
+    def _log(msg: str) -> None:
+        log_line(msg, progress=progress_enabled, verbose=verbose)
+
+    def _update_postfix(**kwargs: Any) -> None:
+        postfix.update(kwargs)
+        if bar is not None:
+            bar.set_postfix(
+                ok=postfix["ok"],
+                fail=postfix["fail"],
+                skip=postfix["skip"],
+                refresh=False,
+            )
+
+    planned = len(specs) * len(algorithms)
+
+    def _persist_state() -> None:
+        write_batch_state(
+            batch_state_path,
+            config_path=config_path,
+            stats=stats,
+            completed_run_ids=completed,
+            interrupted=interrupted,
+            planned_runs=planned,
+        )
+
+    try:
+        prepared: list[dict[str, Any]] = []
+        for spec in specs:
+            if interrupted:
+                break
+            info = ensure_connected_dataset(
+                spec,
+                datasets_dir,
+                executable,
+                require_connected=require_connected,
+                max_attempts=max_attempts,
+            )
+            if info["status"] != "ok":
+                stats["datasets_failed"] += 1
+                for algorithm in algorithms:
+                    if interrupted:
+                        break
+                    row = {
+                        "run_id": f"{algorithm}__{spec.key()}_FAILED",
+                        "algorithm": algorithm,
+                        "distribution": spec.distribution,
+                        "n": spec.n,
+                        "base_seed": spec.base_seed,
+                        "effective_seed": "",
+                        "generation_attempt": info["meta"].get("attempt"),
+                        "radius": spec.radius,
+                        "density": spec.density,
+                        "input_connected": False,
+                        "dataset_sha256": info["meta"].get("dataset_sha256", ""),
+                        "status": "connectivity_retry_exhausted",
+                        "error": info.get("error", ""),
+                        "exit_code": 1,
+                    }
+                    append_experiment_row(experiments_csv, row)
+                    stats["rows"] += 1
+                    stats["runs_failed"] += 1
+                    postfix["fail"] += 1
+                    if bar is not None:
+                        bar.update(1)
+                        bar.set_postfix(algo=algorithm, dist=spec.distribution, n=spec.n, seed=spec.base_seed, **postfix)
+                continue
+
+            stats["datasets_ok"] += 1
+            prepared.append(info)
+
+        for info in prepared:
+            if interrupted:
+                break
+            csv_path: Path = info["csv_path"]
+            meta = info["meta"]
             for algorithm in algorithms:
-                row = {
-                    "run_id": f"{algorithm}__{spec.key()}_FAILED",
-                    "algorithm": algorithm,
-                    "distribution": spec.distribution,
-                    "n": spec.n,
-                    "base_seed": spec.base_seed,
-                    "effective_seed": "",
-                    "generation_attempt": info["meta"].get("attempt"),
-                    "radius": spec.radius,
-                    "input_connected": False,
-                    "status": "connectivity_exhausted",
-                    "error": info.get("error", ""),
-                    "exit_code": 1,
-                }
+                if interrupted:
+                    break
+                rid = run_id_for(algorithm, csv_path)
+                if rid in completed:
+                    stats["runs_skipped"] += 1
+                    postfix["skip"] += 1
+                    if bar is not None:
+                        bar.update(1)
+                        bar.set_postfix(
+                            algo=algorithm,
+                            dist=meta.get("distribution"),
+                            n=meta.get("n"),
+                            seed=meta.get("base_seed"),
+                            **postfix,
+                        )
+                    continue
+
+                row = run_algorithm_trial(
+                    executable,
+                    algorithm,
+                    csv_path,
+                    meta,
+                    results_dir,
+                    radius=float(config.get("radius", 1.0)),
+                    measure_memory=measure_memory,
+                    timeout_s=timeout_s,
+                    max_memory_mb=max_memory_mb,
+                    timing_repetitions=timing_repetitions,
+                    warmup_runs=warmup_runs,
+                )
                 append_experiment_row(experiments_csv, row)
                 stats["rows"] += 1
-                stats["runs_failed"] += 1
-            continue
+                if row["status"] == "ok":
+                    stats["runs_ok"] += 1
+                    completed.add(rid)
+                    postfix["ok"] += 1
+                else:
+                    stats["runs_failed"] += 1
+                    postfix["fail"] += 1
+                _persist_state()
+                if bar is not None:
+                    bar.update(1)
+                    bar.set_postfix(
+                        algo=algorithm,
+                        dist=meta.get("distribution"),
+                        n=meta.get("n"),
+                        seed=meta.get("base_seed"),
+                        **postfix,
+                    )
 
-        stats["datasets_ok"] += 1
-        prepared.append(info)
+    except KeyboardInterrupt:
+        interrupted = True
+        _persist_state()
+        _log(
+            "\nExperiment interrupted.\n\n"
+            "Completed results were preserved.\n"
+            "Run the same command again to resume."
+        )
+        if bar is not None:
+            bar.close()
+        stats["interrupted"] = True
+        stats["experiments_csv"] = str(experiments_csv)
+        stats["datasets_dir"] = str(datasets_dir)
+        stats["results_dir"] = str(results_dir)
+        stats["batch_state_path"] = str(batch_state_path)
+        return stats
 
-    # Stage 3: algorithms on shared datasets
-    for info in prepared:
-        csv_path: Path = info["csv_path"]
-        meta = info["meta"]
-        for algorithm in algorithms:
-            rid = run_id_for(algorithm, csv_path)
-            if rid in completed:
-                stats["runs_skipped"] += 1
-                continue
-            row = run_algorithm_trial(
-                executable,
-                algorithm,
-                csv_path,
-                meta,
-                results_dir,
-                radius=float(config.get("radius", 1.0)),
-                measure_memory=measure_memory,
-            )
-            append_experiment_row(experiments_csv, row)
-            stats["rows"] += 1
-            if row["status"] == "ok":
-                stats["runs_ok"] += 1
-            else:
-                stats["runs_failed"] += 1
+    if bar is not None:
+        bar.close()
 
+    _persist_state()
+
+    if study_dir is not None:
+        try:
+            from study_report import generate_study_report  # noqa: WPS433
+
+            generate_study_report(study_dir, experiments_csv, manifest_path, batch_state_path)
+        except ImportError:
+            _log("study_report module not found; skipping report generation.")
+
+    stats["interrupted"] = interrupted
     stats["experiments_csv"] = str(experiments_csv)
     stats["datasets_dir"] = str(datasets_dir)
     stats["results_dir"] = str(results_dir)
+    stats["batch_state_path"] = str(batch_state_path)
     return stats
 
 
@@ -739,6 +1184,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--summary", action="store_true", help="print summary of experiments CSV and exit")
     parser.add_argument("--paired", action="store_true", help="print paired algorithm comparisons")
     parser.add_argument("--no-memory", action="store_true", help="skip peak-memory measurement")
+    parser.add_argument("--no-progress", action="store_true", help="disable tqdm progress bar")
+    parser.add_argument("--verbose", action="store_true", help="print detailed log messages")
+    parser.add_argument("--dry-run", action="store_true", help="preview study without executing")
+    parser.add_argument("--skip-preflight", action="store_true", help="skip preflight checks")
     args = parser.parse_args(argv)
 
     config_path = Path(args.config)
@@ -752,10 +1201,22 @@ def main(argv: list[str] | None = None) -> int:
             print(all_paired_comparisons(experiments_csv), end="")
         return 0
 
-    stats = run_campaign(config_path, force=args.force, measure_memory=not args.no_memory)
+    stats = run_campaign(
+        config_path,
+        force=args.force,
+        measure_memory=not args.no_memory,
+        show_progress=not args.no_progress,
+        verbose=args.verbose,
+        dry_run=args.dry_run,
+        skip_preflight=args.skip_preflight,
+    )
+    if stats.get("dry_run"):
+        return 0
     print(json.dumps(stats, indent=2))
     print(summarize(Path(stats["experiments_csv"])), end="")
     print(all_paired_comparisons(Path(stats["experiments_csv"])), end="")
+    if stats.get("interrupted"):
+        return 130
     return 0 if stats["runs_failed"] == 0 and stats["datasets_failed"] == 0 else 1
 
 

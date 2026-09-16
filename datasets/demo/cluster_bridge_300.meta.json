@@ -1,0 +1,15 @@
+{
+  "distribution": "cluster_bridge",
+  "n": 300,
+  "seed": 1,
+  "radius": 1.0,
+  "generator_parameters": {
+    "density": 5.0,
+    "clusters": 3,
+    "spread": 0.45,
+    "bridge_fraction": 0.2,
+    "bridge_width": 0.6
+  },
+  "dataset_sha256": "c873f110e3642f324c882b94d734ad876b352324f6d23a5c8902ac8a3dacd3c2",
+  "permanent_demo": true
+}

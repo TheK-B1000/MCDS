@@ -1,0 +1,19 @@
+{
+  "batch_id": "density",
+  "algorithms": ["marathe", "wan", "funke", "li"],
+  "distributions": ["uniform", "clustered", "perturbed_grid"],
+  "sizes": [500, 1000, 2000],
+  "seeds": [1, 2, 3, 4, 5],
+  "densities": [2.5, 5.0, 10.0],
+  "radius": 1.0,
+  "require_connected": true,
+  "max_connectivity_attempts": 80,
+  "timing_repetitions": 3,
+  "distribution_parameters": {
+    "clustered": {"clusters": 4, "spread": 0.8},
+    "perturbed_grid": {"jitter": 0.15}
+  },
+  "study_dir": "results/studies/density",
+  "max_runtime_seconds": 300,
+  "max_peak_memory_mb": 4096
+}

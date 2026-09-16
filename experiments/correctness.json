@@ -1,13 +1,13 @@
 {
-  "batch_id": "smoke",
+  "batch_id": "correctness",
   "algorithms": ["marathe", "wan", "funke", "li"],
   "distributions": ["uniform", "clustered", "perturbed_grid", "corridor", "cluster_bridge"],
-  "sizes": [100, 300],
-  "seeds": [1],
+  "sizes": [50, 100, 200],
+  "seeds": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
   "densities": [5.0],
   "radius": 1.0,
   "require_connected": true,
-  "max_connectivity_attempts": 40,
+  "max_connectivity_attempts": 60,
   "timing_repetitions": 1,
   "distribution_parameters": {
     "clustered": {"clusters": 4, "spread": 0.8},
@@ -15,7 +15,7 @@
     "cluster_bridge": {"clusters": 3, "spread": 0.45, "bridge_fraction": 0.2, "bridge_width": 0.6},
     "perturbed_grid": {"jitter": 0.15}
   },
-  "study_dir": "results/studies/smoke",
-  "max_runtime_seconds": 120,
+  "study_dir": "results/studies/correctness",
+  "max_runtime_seconds": 180,
   "max_peak_memory_mb": 2048
 }

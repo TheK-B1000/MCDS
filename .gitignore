@@ -17,10 +17,11 @@ venv/
 
 # Generated data. Every generator is deterministic in (type, n, seed, params),
 # so datasets are reproducible from the command line and not worth versioning.
-datasets/*.csv
-datasets/*.meta.json
 datasets/generated/
 datasets/exact_small/
+datasets/explicit_baseline/
+!datasets/demo/
+!datasets/demo/**
 results/*.json
 results/*.csv
 results/*.png

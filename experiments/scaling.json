@@ -1,0 +1,19 @@
+{
+  "batch_id": "scaling",
+  "algorithms": ["marathe", "wan", "funke", "li"],
+  "distributions": ["uniform", "clustered"],
+  "sizes": [100, 500, 1000, 5000, 10000, 25000, 50000, 100000],
+  "seeds": [1, 2, 3],
+  "densities": [5.0],
+  "radius": 1.0,
+  "require_connected": true,
+  "max_connectivity_attempts": 40,
+  "timing_repetitions": 3,
+  "warmup_runs": 1,
+  "distribution_parameters": {
+    "clustered": {"clusters": 4, "spread": 0.8}
+  },
+  "study_dir": "results/studies/scaling",
+  "max_runtime_seconds": 600,
+  "max_peak_memory_mb": 8192
+}

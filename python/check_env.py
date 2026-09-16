@@ -8,6 +8,7 @@ import sys
 
 REQUIRED = (
     ("matplotlib", "matplotlib"),
+    ("tqdm", "tqdm"),
 )
 
 
