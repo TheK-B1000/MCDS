@@ -16,20 +16,14 @@ __pycache__/
 venv/
 
 # Generated data. Every generator is deterministic in (type, n, seed, params),
-# so datasets are reproducible from the command line and not worth versioning.
-datasets/generated/
-datasets/exact_small/
-datasets/explicit_baseline/
+# so datasets/results are reproducible from the CLI and not worth versioning.
+# Keep only the demo fixtures and directory placeholders.
+datasets/*
+!datasets/.gitkeep
 !datasets/demo/
 !datasets/demo/**
-results/*.json
-results/*.csv
-results/*.png
-results/runs/
-results/plots/
-results/gui_session/
-results/divergence_cases/
-!datasets/.gitkeep
+
+results/*
 !results/.gitkeep
 
 # Editor / OS
