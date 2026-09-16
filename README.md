@@ -4,10 +4,10 @@ An experimental-algorithms project comparing heuristics for the **Minimum
 Connected Dominating Set** problem on **Unit Disk Graphs**, with the constraint
 that the graph is never built.
 
-**Status: Milestone 1, phases 1-3 complete.** Point loading, the spatial-query
-layer, and its verification against brute force are done and tested. No MCDS
-algorithm is implemented yet. See [Current status](#current-status) for the
-detail.
+**Status: implementation complete.** Point generation, the implicit spatial-query
+layer, four MCDS heuristics, visualization, GUI, and the experiment pipeline are
+in place. Remaining work is collecting experimental data. See
+[Current status](#current-status) for the detail.
 
 ---
 
@@ -351,13 +351,15 @@ Done and tested through visualization, GUI, and the smoke experiment pipeline:
 - [x] Implicit connectivity / connected components
 - [x] Independent CDS validator (domination + selected-only connectivity)
 - [x] Marathe CDOM documented from arXiv:math/9409226 and implemented
+- [x] Wan–Alzoubi–Frieder documented and implemented
+- [x] Funke–Kesselman–Meyer–Segal documented and implemented
+- [x] Li–Thai–Wang–Yi–Wan–Du S-MIS documented and implemented
 - [x] Unified CLI with staged timing and JSON results
 - [x] Python visualization (CDS highlight, optional CDS edges, PNG export)
 - [x] Tkinter GUI orchestration layer
 - [x] Experiment runner with connected-input retries, resume, peak memory
 - [x] Basic experimental plots across distributions
 
-Not started (next milestones):
+Remaining:
 
-- [ ] Larger scaling campaign
-- [ ] Additional algorithms (Wan, Funke, Li) — source-first, after this baseline stays green
+- [ ] Collect experimental data (pilot → density → geometry → scaling → final)

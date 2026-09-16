@@ -23,7 +23,7 @@ _PYTHON_DIR = Path(__file__).resolve().parent
 if str(_PYTHON_DIR) not in sys.path:
     sys.path.insert(0, str(_PYTHON_DIR))
 
-from generators import GENERATOR_TYPES  # noqa: E402
+from generators import GENERATOR_TYPES, read_csv  # noqa: E402
 from gui_support import (  # noqa: E402
     ALGORITHM_IDS_BY_LABEL,
     ALGORITHM_LABELS,
@@ -38,7 +38,12 @@ from gui_support import (  # noqa: E402
     run_solver,
     write_dataset_with_metadata,
 )
-from visualization import VisualizationError, create_figure, prepare_plot_data  # noqa: E402
+from visualization import (  # noqa: E402
+    VisualizationError,
+    create_figure,
+    load_metadata_sidecar,
+    prepare_plot_data,
+)
 
 
 # GUI chrome colors. Plots use create_figure(dark=...).
@@ -510,24 +515,27 @@ class McdsGui(tk.Tk):
             self.metric_vars["n"].set(str(n))
             self.metric_vars["distribution"].set(dist)
             self.metric_vars["seed"].set(str(seed))
-            # Preview points with an empty selection stub (not a solver result).
-            stub = {
-                "algorithm": "none",
-                "n": n,
-                "radius": float(self.var_radius.get()),
-                "cds_size": 0,
-                "cds_ratio": 0.0,
-                "algorithm_ms": 0.0,
-                "selected_ids": [],
-            }
-            import json
-
-            self.result_path.write_text(json.dumps(stub, indent=2), encoding="utf-8")
+            self._write_preview_stub(n)
             self._refresh_plot()
             self._set_status(f"Generated {n} points → {self.csv_path.name}")
         except Exception as exc:  # noqa: BLE001
             print(traceback.format_exc(), file=sys.stderr)
             messagebox.showerror("Generation failed", str(exc))
+
+    def _write_preview_stub(self, n: int) -> None:
+        """Write an empty selection so loaded/generated points can be plotted."""
+        import json
+
+        stub = {
+            "algorithm": "none",
+            "n": n,
+            "radius": float(self.var_radius.get()),
+            "cds_size": 0,
+            "cds_ratio": 0.0,
+            "algorithm_ms": 0.0,
+            "selected_ids": [],
+        }
+        self.result_path.write_text(json.dumps(stub, indent=2), encoding="utf-8")
 
     def on_load_csv(self) -> None:
         path = filedialog.askopenfilename(
@@ -539,13 +547,41 @@ class McdsGui(tk.Tk):
         try:
             import shutil
 
-            shutil.copy2(path, self.csv_path)
-            # Drop previous result so we don't mix mismatched IDs.
-            if self.result_path.exists():
-                self.result_path.unlink()
+            src = Path(path)
+            shutil.copy2(src, self.csv_path)
+
+            # Prefer a sidecar next to the chosen file; clear a stale session meta otherwise.
+            src_meta = src.with_name(src.stem + ".meta.json")
+            if src_meta.is_file():
+                shutil.copy2(src_meta, self.meta_path)
+            elif self.meta_path.exists():
+                self.meta_path.unlink()
+
+            rows = read_csv(str(self.csv_path))
+            if not rows:
+                raise ValueError(f"point CSV contains no points: {src.name}")
+            n = len(rows)
+
+            meta = load_metadata_sidecar(self.csv_path)
             self._clear_metrics()
-            self._init_empty_plot()
-            self._set_status(f"Loaded {Path(path).name}")
+            self.metric_vars["n"].set(str(meta.get("n", n)))
+            if meta.get("distribution"):
+                self.metric_vars["distribution"].set(str(meta["distribution"]))
+                dist = str(meta["distribution"])
+                if dist in GENERATOR_TYPES:
+                    self.var_distribution.set(dist)
+                    self._on_distribution_changed()
+            seed = meta.get("effective_seed", meta.get("seed"))
+            if seed is not None:
+                self.metric_vars["seed"].set(str(seed))
+                try:
+                    self.var_seed.set(int(seed))
+                except (TypeError, ValueError):
+                    pass
+
+            self._write_preview_stub(n)
+            self._refresh_plot()
+            self._set_status(f"Loaded {src.name} ({n} points) — click Run MCDS")
         except Exception as exc:  # noqa: BLE001
             print(traceback.format_exc(), file=sys.stderr)
             messagebox.showerror("Load failed", str(exc))
