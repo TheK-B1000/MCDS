@@ -116,9 +116,13 @@ def load_config(path: Path) -> dict[str, Any]:
 
 
 def dataset_basename(spec: DatasetSpec, effective_seed: int) -> str:
+    # Params (especially density) must be part of the filename. Without this,
+    # a densities cartesian product silently reuses the wrong point set.
+    param_blob = json.dumps(spec.params, sort_keys=True, separators=(",", ":"))
+    digest = hashlib.sha1(param_blob.encode("utf-8")).hexdigest()[:8]
     if effective_seed == spec.base_seed:
-        return f"{spec.distribution}_n{spec.n}_seed{spec.base_seed}.csv"
-    return f"{spec.distribution}_n{spec.n}_seed{spec.base_seed}_eff{effective_seed}.csv"
+        return f"{spec.distribution}_n{spec.n}_seed{spec.base_seed}_{digest}.csv"
+    return f"{spec.distribution}_n{spec.n}_seed{spec.base_seed}_eff{effective_seed}_{digest}.csv"
 
 
 def write_sidecar(meta_path: Path, payload: dict[str, Any]) -> None:

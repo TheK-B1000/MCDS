@@ -27,8 +27,11 @@ from experiment_runner import (  # noqa: E402
 class ExperimentRunnerTests(unittest.TestCase):
     def test_dataset_naming(self) -> None:
         spec = DatasetSpec("uniform", 100, 3, 1.0, {"density": 2.0})
-        self.assertEqual(dataset_basename(spec, 3), "uniform_n100_seed3.csv")
-        self.assertEqual(dataset_basename(spec, 5), "uniform_n100_seed3_eff5.csv")
+        digest = spec.key().rsplit("_", 1)[-1]
+        self.assertEqual(dataset_basename(spec, 3), f"uniform_n100_seed3_{digest}.csv")
+        self.assertEqual(dataset_basename(spec, 5), f"uniform_n100_seed3_eff5_{digest}.csv")
+        other = DatasetSpec("uniform", 100, 3, 1.0, {"density": 5.0})
+        self.assertNotEqual(dataset_basename(spec, 3), dataset_basename(other, 3))
 
     def test_expand_specs_count(self) -> None:
         config = {
