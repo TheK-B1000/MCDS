@@ -1,5 +1,6 @@
 {
   "batch_id": "pilot",
+  "comment": "Historical pilot that exposed density-3.0 connectivity gaps for clustered/corridor at n=2000. Keep results as-is; primary studies use densities from connectivity calibration (5/8/12).",
   "algorithms": ["marathe", "wan", "funke", "li"],
   "distributions": ["uniform", "clustered", "perturbed_grid", "corridor", "cluster_bridge"],
   "sizes": [200, 500, 1000, 2000],

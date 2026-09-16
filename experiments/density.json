@@ -4,7 +4,7 @@
   "distributions": ["uniform", "clustered", "perturbed_grid"],
   "sizes": [500, 1000, 2000],
   "seeds": [1, 2, 3, 4, 5],
-  "densities": [2.5, 5.0, 10.0],
+  "densities": [5.0, 8.0, 12.0],
   "radius": 1.0,
   "require_connected": true,
   "max_connectivity_attempts": 80,
