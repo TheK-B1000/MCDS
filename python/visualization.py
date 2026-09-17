@@ -213,22 +213,33 @@ def cds_edges(
     return edges
 
 
-def build_title(data: PlotData) -> str:
+def algorithm_display_name(data: PlotData) -> str:
+    raw = data.result.get("algorithm", "unknown")
+    algo = str(raw if raw is not None else "unknown").strip()
+    key = algo.lower().replace("-", "_").replace(" ", "_")
+    if key in {"", "none", "null", "preview"}:
+        return "Point set"
+    if key == "marathe":
+        return "Marathe CDOM"
+    if key == "wan":
+        return "Wan–Alzoubi–Frieder"
+    if key == "funke":
+        return "Funke–Kesselman–Meyer–Segal"
+    if key in {"li", "li_smis", "s_mis", "smis"}:
+        return "Li S-MIS"
+    return algo.replace("_", " ").title()
+
+
+def build_stats_line(data: PlotData) -> str:
     result = data.result
-    algo = str(result.get("algorithm", "unknown")).replace("_", " ").title()
-    if algo.lower() == "marathe":
-        algo = "Marathe CDOM"
-    elif algo.lower() == "wan":
-        algo = "Wan–Alzoubi–Frieder"
-    elif algo.lower() == "funke":
-        algo = "Funke–Kesselman–Meyer–Segal"
-    elif algo.lower() == "li":
-        algo = "Li S-MIS"
     n = int(result.get("n", len(data.point_ids)))
+    raw_algo = str(result.get("algorithm", "") or "").strip().lower()
+    if raw_algo in {"", "none", "null", "preview"}:
+        return f"n={n} | preview — click Run MCDS"
     cds = int(result.get("cds_size", len(data.selected_ids)))
     ratio = float(result.get("cds_ratio", cds / n if n else 0.0))
     runtime = float(result.get("algorithm_ms", 0.0))
-    return f"{algo}\nn={n} | CDS={cds} ({100.0 * ratio:.1f}%) | {runtime:.3f} ms"
+    return f"n={n} | CDS={cds} ({100.0 * ratio:.1f}%) | {runtime:.3f} ms"
 
 
 def build_subtitle(data: PlotData) -> str:
@@ -255,6 +266,15 @@ def build_subtitle(data: PlotData) -> str:
     if queries is not None:
         parts.append(f"queries={queries}")
     return " | ".join(parts)
+
+
+def build_title(data: PlotData) -> str:
+    """Full multi-line header used by tests/CLI helpers."""
+    lines = [algorithm_display_name(data), build_stats_line(data)]
+    subtitle = build_subtitle(data)
+    if subtitle:
+        lines.append(subtitle)
+    return "\n".join(lines)
 
 
 def create_figure(
@@ -288,7 +308,7 @@ def create_figure(
         muted_color = "#4a5560"
         spine_color = "#cbd2d9"
 
-    fig, ax = plt.subplots(figsize=(8.0, 6.5))
+    fig, ax = plt.subplots(figsize=(8.0, 8.0))
     fig.patch.set_facecolor(bg)
     ax.set_facecolor(axis_bg)
 
@@ -325,19 +345,38 @@ def create_figure(
         ax.plot([x0, x1], [y0, y1], color=cds_color, alpha=0.45 if dark else 0.35, linewidth=0.8, zorder=2)
 
     ax.set_aspect("equal", adjustable="datalim")
-    ax.set_title(build_title(data), fontsize=12, pad=12, color=text_color)
+
+    # Figure-level header lines with fixed vertical gaps. Mixing ax.set_title
+    # with a second ax.text above the axes used to make the stats/meta collide.
+    title = algorithm_display_name(data)
+    stats = build_stats_line(data)
     subtitle = build_subtitle(data)
+    fig.suptitle(title, fontsize=14, fontweight="bold", color=text_color, y=0.975)
+    fig.text(
+        0.5,
+        0.915,
+        stats,
+        ha="center",
+        va="center",
+        fontsize=10,
+        color=muted_color,
+        transform=fig.transFigure,
+    )
     if subtitle:
-        ax.text(
+        fig.text(
             0.5,
-            1.02,
+            0.860,
             subtitle,
-            transform=ax.transAxes,
             ha="center",
-            va="bottom",
-            fontsize=9,
+            va="center",
+            fontsize=10,
             color=muted_color,
+            transform=fig.transFigure,
         )
+        axes_top = 0.78
+    else:
+        axes_top = 0.86
+
     legend = ax.legend(loc="best", frameon=False, labelcolor=text_color)
     if legend is not None:
         for text in legend.get_texts():
@@ -347,7 +386,7 @@ def create_figure(
     ax.tick_params(colors=muted_color)
     for spine in ax.spines.values():
         spine.set_color(spine_color)
-    fig.tight_layout()
+    fig.subplots_adjust(left=0.10, right=0.98, bottom=0.08, top=axes_top)
     return fig
 
 
@@ -379,7 +418,7 @@ def render(
     if save is not None:
         save_path = Path(save)
         save_path.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(save_path, dpi=140, bbox_inches="tight")
+        fig.savefig(save_path, dpi=140, bbox_inches="tight", pad_inches=0.35)
 
     if show:
         import matplotlib.pyplot as plt
