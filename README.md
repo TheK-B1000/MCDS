@@ -135,8 +135,12 @@ cpp/
   tests/              test harness, brute-force reference, test suites
 python/
   generators.py       five point distributions, deterministic per seed
-datasets/             generated CSVs (gitignored; reproducible from the CLI)
+  import_dataset.py   real-world CSV / GeoJSON → canonical PointSet CSV
+  real_dataset.py     projection, sampling, metadata, LCC / tiles helpers
+  prepare_real_dataset.py  explicit LCC, nested prefixes, rectangular tiles
+datasets/             generated / imported CSVs (gitignored; demo + real/ kept)
 results/              run outputs (gitignored)
+docs/real_world_data.md
 ```
 
 `BruteForce.hpp` deliberately lives under `cpp/tests/`, which is on the include
@@ -265,6 +269,46 @@ python python/experiment_runner.py --config experiments/smoke.json --summary
 python python/plots.py --experiments-csv results/experiments.csv --save-dir results/plots
 ```
 
+### Real-world / external datasets
+
+Synthetic studies and imported real datasets share the same canonical CSV and
+solver path. See [docs/real_world_data.md](docs/real_world_data.md).
+
+```bash
+# Synthetic clustered density study (unchanged)
+py -3 python/run_study.py --config experiments/density.json
+
+# Import planar CSV
+py -3 python/import_dataset.py \
+    --type csv \
+    --input data/raw/points.csv \
+    --x-column x \
+    --y-column y \
+    --coordinates planar \
+    --output datasets/real/points.csv
+
+# Import geographic CSV (projects lon/lat → meters)
+py -3 python/import_dataset.py \
+    --type csv \
+    --input data/raw/locations.csv \
+    --x-column longitude \
+    --y-column latitude \
+    --coordinates geographic \
+    --output datasets/real/locations_projected.csv
+
+# Import building GeoJSON
+py -3 python/import_dataset.py \
+    --type geojson \
+    --input data/raw/buildings.geojson \
+    --feature-point centroid \
+    --coordinates geographic \
+    --limit 1000000 \
+    --output datasets/real/buildings_1m.csv
+
+# Preview a real-data study (replace placeholder paths first)
+py -3 python/run_study.py --config experiments/real_world_scaling.json --dry-run
+```
+
 Datasets are generated **once** per `(distribution, n, seed, params)` key and
 reused across algorithms. With `require_connected`, the runner retries
 `effective_seed = base_seed + attempt` up to a configured limit and records
@@ -359,7 +403,8 @@ Done and tested through visualization, GUI, and the smoke experiment pipeline:
 - [x] Tkinter GUI orchestration layer
 - [x] Experiment runner with connected-input retries, resume, peak memory
 - [x] Basic experimental plots across distributions
+- [x] Real-world dataset import (CSV / GeoJSON / lat-lon projection) and external study mode
 
 Remaining:
 
-- [ ] Collect experimental data (pilot → density → geometry → scaling → final)
+- [ ] Collect experimental data (pilot → density → geometry → scaling → final; optional real-world scaling after import)

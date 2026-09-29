@@ -22,6 +22,10 @@ datasets/*
 !datasets/.gitkeep
 !datasets/demo/
 !datasets/demo/**
+!datasets/real/
+!datasets/real/.gitkeep
+datasets/real/**
+!datasets/real/.gitkeep
 
 results/*
 !results/.gitkeep

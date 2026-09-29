@@ -98,8 +98,22 @@ class DatasetSpec:
     base_seed: int
     radius: float
     params: dict[str, Any] = field(default_factory=dict)
+    # External / real-world mode: load an existing canonical CSV (no generation).
+    external_path: str | None = None
+    external_name: str | None = None
+    radius_units: str | None = None
+
+    @property
+    def is_external(self) -> bool:
+        return self.external_path is not None
 
     def key(self) -> str:
+        if self.is_external:
+            name = self.external_name or Path(self.external_path or "external").stem
+            digest = hashlib.sha1(
+                f"{self.external_path}|{self.radius}|{self.radius_units}".encode("utf-8")
+            ).hexdigest()[:8]
+            return f"real_{name}_{digest}"
         param_blob = json.dumps(self.params, sort_keys=True, separators=(",", ":"))
         digest = hashlib.sha1(param_blob.encode("utf-8")).hexdigest()[:8]
         return f"{self.distribution}_n{self.n}_seed{self.base_seed}_{digest}"
@@ -340,6 +354,127 @@ def check_connected(
     return bool(outcome.result.get("connected_input")), outcome.result, outcome.error
 
 
+def ensure_external_dataset(
+    spec: DatasetSpec,
+    repo_root: Path,
+    executable: Path,
+    *,
+    require_connected: bool,
+    work_dir: Path,
+) -> dict[str, Any]:
+    """Load an existing canonical CSV for real-world / external studies.
+
+    Never generates points, never changes radius, never silently filters to the
+    largest connected component. Disconnected inputs are reported explicitly.
+    """
+    assert spec.external_path is not None
+    csv_path = Path(spec.external_path)
+    if not csv_path.is_file():
+        csv_path = repo_root / spec.external_path
+    if not csv_path.is_file():
+        return {
+            "status": "missing_dataset",
+            "csv_path": None,
+            "meta_path": None,
+            "meta": {
+                "distribution": spec.external_name or "real",
+                "n": 0,
+                "base_seed": spec.base_seed,
+                "radius": spec.radius,
+                "radius_units": spec.radius_units,
+                "connected": False,
+                "dataset_sha256": "",
+                "source_type": "real",
+                "external_path": spec.external_path,
+            },
+            "error": f"external dataset not found: {spec.external_path}",
+        }
+
+    work_dir.mkdir(parents=True, exist_ok=True)
+    temp_json = work_dir / f".conn_{spec.key()}.json"
+    dataset_hash = sha256_file(csv_path)
+    meta_sidecar = csv_path.with_name(csv_path.stem + ".meta.json")
+    sidecar: dict[str, Any] = {}
+    if meta_sidecar.is_file():
+        try:
+            sidecar = json.loads(meta_sidecar.read_text(encoding="utf-8-sig"))
+        except json.JSONDecodeError:
+            sidecar = {}
+
+    n = int(sidecar.get("output_point_count") or sidecar.get("n") or 0)
+    if n <= 0:
+        n = 0
+        with csv_path.open("r", encoding="utf-8-sig") as handle:
+            for line_number, raw in enumerate(handle, start=1):
+                line = raw.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if line_number == 1 and line.lower().startswith("id,"):
+                    continue
+                n += 1
+
+    connected = True
+    conn_result = None
+    error = None
+    if require_connected:
+        connected, conn_result, error = check_connected(
+            executable, csv_path, temp_json, spec.radius
+        )
+
+    component_count = None if conn_result is None else conn_result.get("component_count")
+    largest = None if conn_result is None else conn_result.get("largest_component")
+    largest_pct = None
+    if largest is not None and n > 0:
+        largest_pct = 100.0 * float(largest) / float(n)
+
+    meta = {
+        "distribution": spec.external_name or sidecar.get("distribution") or "real",
+        "n": n,
+        "base_seed": spec.base_seed,
+        "effective_seed": spec.base_seed,
+        "attempt": 0,
+        "radius": spec.radius,
+        "radius_units": spec.radius_units or sidecar.get("units") or "meters",
+        "density": None,
+        "connected": connected,
+        "dataset_sha256": dataset_hash,
+        "generator_parameters": {},
+        "source_type": "real",
+        "external_path": str(csv_path).replace("\\", "/"),
+        "component_count": component_count,
+        "largest_component": largest,
+        "largest_component_pct": largest_pct,
+        "import_metadata": sidecar,
+    }
+    if temp_json.exists():
+        temp_json.unlink()
+
+    if connected or not require_connected:
+        # Still allow runs when require_connected is false; algorithms may reject.
+        return {
+            "status": "ok" if connected or not require_connected else "disconnected_input",
+            "csv_path": csv_path,
+            "meta_path": meta_sidecar if meta_sidecar.is_file() else None,
+            "meta": meta,
+        }
+
+    return {
+        "status": "disconnected_input",
+        "csv_path": csv_path,
+        "meta_path": meta_sidecar if meta_sidecar.is_file() else None,
+        "meta": meta,
+        "error": (
+            error
+            or (
+                f"disconnected input: components={component_count}, "
+                f"largest={largest} ({largest_pct:.1f}% of n={n})"
+                if largest_pct is not None
+                else "disconnected input"
+            )
+        ),
+    }
+
+
 def ensure_connected_dataset(
     spec: DatasetSpec,
     datasets_dir: Path,
@@ -347,8 +482,19 @@ def ensure_connected_dataset(
     *,
     require_connected: bool,
     max_attempts: int,
+    repo_root: Path | None = None,
 ) -> dict[str, Any]:
     """Generate (or reuse) a dataset. Returns a status dict with paths/meta."""
+    if spec.is_external:
+        root = repo_root or find_repo_root()
+        return ensure_external_dataset(
+            spec,
+            root,
+            executable,
+            require_connected=require_connected,
+            work_dir=datasets_dir,
+        )
+
     datasets_dir.mkdir(parents=True, exist_ok=True)
     temp_json = datasets_dir / f".conn_{spec.key()}.json"
 
@@ -663,7 +809,42 @@ def run_algorithm_trial(
 
 
 def expand_dataset_specs(config: dict[str, Any]) -> list[DatasetSpec]:
-    specs: list[DatasetSpec] = []
+    """Expand synthetic cartesian product *or* external ``datasets`` list.
+
+    When ``datasets`` is present, synthetic generation keys
+    (distributions / sizes / seeds / densities) are ignored.
+    """
+    external = config.get("datasets")
+    if external is not None:
+        if not isinstance(external, list) or not external:
+            raise ValueError("config 'datasets' must be a non-empty list")
+        specs: list[DatasetSpec] = []
+        default_radius = config.get("radius")
+        for entry in external:
+            if not isinstance(entry, dict):
+                raise ValueError("each datasets[] entry must be an object")
+            path = entry.get("path")
+            if not path:
+                raise ValueError("datasets[] entry missing 'path'")
+            radius = entry.get("radius", default_radius)
+            if radius is None:
+                raise ValueError(f"datasets entry {entry.get('name', path)!r} missing radius")
+            name = str(entry.get("name") or Path(str(path)).stem)
+            specs.append(
+                DatasetSpec(
+                    distribution=name,
+                    n=int(entry.get("n", 0)),
+                    base_seed=int(entry.get("seed", 0)),
+                    radius=float(radius),
+                    params={},
+                    external_path=str(path),
+                    external_name=name,
+                    radius_units=entry.get("radius_units", config.get("radius_units", "meters")),
+                )
+            )
+        return specs
+
+    specs = []
     dist_params = config.get("distribution_parameters") or {}
     densities = config.get("densities")
     if densities is None:
@@ -774,28 +955,48 @@ def study_preview(config: dict[str, Any], specs: list[DatasetSpec], algorithms: 
     warmup = max(0, int(config.get("warmup_runs", 0)))
     launches_per_logical = timing_reps + warmup
     total_launches = logical_runs * launches_per_logical
+    external_mode = bool(config.get("datasets"))
     lines = [
         "STUDY PREVIEW",
         "",
+        f"Mode:                    {'external/real datasets' if external_mode else 'synthetic generation'}",
         f"Algorithms:              {len(algorithms)}  {algorithms}",
-        f"Distributions:           {len(config.get('distributions', []))}  {config.get('distributions', [])}",
-        f"Sizes:                   {config.get('sizes', [])}",
-        f"Seeds:                   {config.get('seeds', [])}",
-        f"Densities:               {densities}",
-        f"Radius:                  {config.get('radius', 1.0)}",
-        "",
-        f"Unique datasets:         {total_datasets}",
-        f"Logical algorithm runs:  {logical_runs}",
-        f"Measured repetitions:    {timing_reps} per run",
-        f"Warmups:                 {warmup} per run",
-        f"Total solver launches:   {total_launches}",
-        "",
-        f"Largest n:               {largest_n}",
-        f"Max runtime seconds:     {config.get('max_runtime_seconds', config.get('timeout_s'))}",
-        f"Max peak memory MB:      {config.get('max_peak_memory_mb', config.get('max_memory_mb'))}",
-        "",
-        "No experiments executed." if True else "",
     ]
+    if external_mode:
+        names = [spec.external_name or spec.distribution for spec in specs]
+        lines.extend(
+            [
+                f"External datasets:       {len(specs)}  {names}",
+                f"Radii:                   {[spec.radius for spec in specs]}",
+                f"Radius units:            {[spec.radius_units for spec in specs]}",
+            ]
+        )
+    else:
+        lines.extend(
+            [
+                f"Distributions:           {len(config.get('distributions', []))}  {config.get('distributions', [])}",
+                f"Sizes:                   {config.get('sizes', [])}",
+                f"Seeds:                   {config.get('seeds', [])}",
+                f"Densities:               {densities}",
+                f"Radius:                  {config.get('radius', 1.0)}",
+            ]
+        )
+    lines.extend(
+        [
+            "",
+            f"Unique datasets:         {total_datasets}",
+            f"Logical algorithm runs:  {logical_runs}",
+            f"Measured repetitions:    {timing_reps} per run",
+            f"Warmups:                 {warmup} per run",
+            f"Total solver launches:   {total_launches}",
+            "",
+            f"Largest n:               {largest_n}",
+            f"Max runtime seconds:     {config.get('max_runtime_seconds', config.get('timeout_s'))}",
+            f"Max peak memory MB:      {config.get('max_peak_memory_mb', config.get('max_memory_mb'))}",
+            "",
+            "No experiments executed.",
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -1080,9 +1281,11 @@ def run_campaign(
                 executable,
                 require_connected=require_connected,
                 max_attempts=max_attempts,
+                repo_root=repo_root,
             )
             if info["status"] != "ok":
                 stats["datasets_failed"] += 1
+                fail_status = info["status"]
                 for algorithm in algorithms:
                     if interrupted:
                         break
@@ -1090,15 +1293,16 @@ def run_campaign(
                         "run_id": f"{algorithm}__{spec.key()}_FAILED",
                         "algorithm": algorithm,
                         "distribution": spec.distribution,
-                        "n": spec.n,
+                        "n": info["meta"].get("n", spec.n),
                         "base_seed": spec.base_seed,
                         "effective_seed": "",
                         "generation_attempt": info["meta"].get("attempt"),
                         "radius": spec.radius,
                         "density": spec.density,
                         "input_connected": False,
+                        "component_count": info["meta"].get("component_count"),
                         "dataset_sha256": info["meta"].get("dataset_sha256", ""),
-                        "status": "connectivity_retry_exhausted",
+                        "status": fail_status,
                         "error": info.get("error", ""),
                         "exit_code": 1,
                     }

@@ -59,10 +59,6 @@ def run_preflight(
     except Exception as exc:  # noqa: BLE001
         raise PreflightError(f"solver failed to launch: {exc}") from exc
 
-    for key in ("distributions", "sizes", "seeds"):
-        if key not in config or not config[key]:
-            raise PreflightError(f"config missing or empty required key {key!r}")
-
     algorithms = list(config.get("algorithms", ["marathe"]))
     if not algorithms:
         raise PreflightError("algorithms list is empty")
@@ -70,9 +66,30 @@ def run_preflight(
         if algo not in KNOWN_ALGORITHMS:
             raise PreflightError(f"unrecognized algorithm {algo!r}; known={KNOWN_ALGORITHMS}")
 
-    for dist in config["distributions"]:
-        if dist not in GENERATOR_TYPES:
-            raise PreflightError(f"unknown distribution {dist!r}")
+    external = config.get("datasets")
+    if external is not None:
+        if not isinstance(external, list) or not external:
+            raise PreflightError("config 'datasets' must be a non-empty list for external mode")
+        for entry in external:
+            if not isinstance(entry, dict) or not entry.get("path"):
+                raise PreflightError("each datasets[] entry needs a 'path'")
+            csv_path = Path(entry["path"])
+            if not csv_path.is_file():
+                csv_path = repo_root / entry["path"]
+            if not csv_path.is_file():
+                raise PreflightError(f"external dataset not found: {entry['path']}")
+            if entry.get("radius") is None and config.get("radius") is None:
+                raise PreflightError(
+                    f"datasets entry {entry.get('name', entry['path'])!r} missing radius"
+                )
+        note(f"External dataset mode: {len(external)} dataset(s)")
+    else:
+        for key in ("distributions", "sizes", "seeds"):
+            if key not in config or not config[key]:
+                raise PreflightError(f"config missing or empty required key {key!r}")
+        for dist in config["distributions"]:
+            if dist not in GENERATOR_TYPES:
+                raise PreflightError(f"unknown distribution {dist!r}")
 
     # Writable output dirs
     for key, default in (
@@ -97,6 +114,11 @@ def run_preflight(
         import tqdm  # noqa: F401
     except ImportError as exc:
         raise PreflightError("tqdm is required; install python/requirements.txt") from exc
+    if external is not None:
+        try:
+            import pyproj  # noqa: F401
+        except ImportError:
+            note("WARNING: pyproj not installed; real-data *import* will fail (solver runs OK)")
 
     # Tiny connected dataset + each algorithm
     with tempfile.TemporaryDirectory(prefix="mcds_preflight_") as tmp:

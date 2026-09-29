@@ -9,6 +9,8 @@ import sys
 REQUIRED = (
     ("matplotlib", "matplotlib"),
     ("tqdm", "tqdm"),
+    ("pyproj", "pyproj"),
+    ("ijson", "ijson"),
 )
 
 
