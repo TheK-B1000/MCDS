@@ -274,6 +274,7 @@ int main(int argc, char** argv) {
         result.algorithmNeighborQueries = index.stats().neighborQueries;
         result.algorithmCandidatesExamined = index.stats().candidatesExamined;
         result.selectedIds = cds.selectedIds;
+        result.roles = cds.roles;
         result.cdsSize = cds.selectedIds.size();
         result.cdsRatio =
             result.n == 0 ? 0.0 : static_cast<double>(result.cdsSize) / static_cast<double>(result.n);

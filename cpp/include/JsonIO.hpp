@@ -42,6 +42,9 @@ struct RunResult {
     bool validConnected = false;
 
     std::vector<int> selectedIds;
+
+    /// Visualization-only; empty when the algorithm did not report roles.
+    std::vector<std::pair<int, std::string>> roles;
 };
 
 /// Writes `result` as JSON. Header-only, no third-party dependency.

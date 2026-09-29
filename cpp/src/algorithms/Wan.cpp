@@ -129,10 +129,15 @@ MCDSResult WanAlgorithm::solve(const PointSet& points, const SpatialIndex& index
 
     MCDSResult result;
     result.selectedIds.reserve(points.size());
+    result.roles.reserve(points.size());
     for (std::size_t i = 0; i < points.size(); ++i) {
-        if (selected[i]) {
-            result.selectedIds.push_back(points.idAt(i));
+        if (!selected[i]) {
+            continue;
         }
+        result.selectedIds.push_back(points.idAt(i));
+        // MIS vertices are cores; type-2 tree parents that are not in the MIS
+        // are connectors. An MIS vertex that is also someone's parent stays core.
+        result.roles.emplace_back(points.idAt(i), inMis[i] ? "core" : "connector");
     }
     return result;
 }

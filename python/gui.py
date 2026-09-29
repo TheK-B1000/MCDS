@@ -44,6 +44,7 @@ from visualization import (  # noqa: E402
     load_metadata_sidecar,
     prepare_plot_data,
 )
+from visualization_style import COLOR_MODE_FINAL, COLOR_MODES  # noqa: E402
 
 
 # GUI chrome colors. Plots use create_figure(dark=...).
@@ -115,6 +116,7 @@ class McdsGui(tk.Tk):
         self.var_bridge_width = tk.DoubleVar(value=0.5)
         self.var_show_edges = tk.BooleanVar(value=True)
         self.var_dark_mode = tk.BooleanVar(value=True)
+        self.var_color_mode = tk.StringVar(value=COLOR_MODE_FINAL)
         self.var_status = tk.StringVar(value="")
 
         self.metric_vars = {
@@ -164,10 +166,18 @@ class McdsGui(tk.Tk):
             ),
             1,
         )
-        row("Point count", ttk.Entry(controls, textvariable=self.var_n), 2)
-        row("Seed", ttk.Entry(controls, textvariable=self.var_seed), 3)
-        row("Radius", ttk.Entry(controls, textvariable=self.var_radius), 4)
-        row("Density", ttk.Entry(controls, textvariable=self.var_density), 5)
+        self.cmb_color_mode = ttk.Combobox(
+            controls,
+            textvariable=self.var_color_mode,
+            values=list(COLOR_MODES),
+            state="readonly",
+        )
+        self.cmb_color_mode.bind("<<ComboboxSelected>>", lambda _e: self._on_color_mode_toggled())
+        row("Color mode", self.cmb_color_mode, 2)
+        row("Point count", ttk.Entry(controls, textvariable=self.var_n), 3)
+        row("Seed", ttk.Entry(controls, textvariable=self.var_seed), 4)
+        row("Radius", ttk.Entry(controls, textvariable=self.var_radius), 5)
+        row("Density", ttk.Entry(controls, textvariable=self.var_density), 6)
 
         self.ent_width = ttk.Entry(controls, textvariable=self.var_width)
         self.ent_height = ttk.Entry(controls, textvariable=self.var_height)
@@ -179,27 +189,27 @@ class McdsGui(tk.Tk):
         self.ent_bridge_frac = ttk.Entry(controls, textvariable=self.var_bridge_fraction)
         self.ent_bridge_width = ttk.Entry(controls, textvariable=self.var_bridge_width)
 
-        row("Width", self.ent_width, 6)
-        row("Height", self.ent_height, 7)
-        row("Clusters", self.ent_clusters, 8)
-        row("Spread", self.ent_spread, 9)
-        row("Spacing", self.ent_spacing, 10)
-        row("Jitter", self.ent_jitter, 11)
-        row("Corridor width", self.ent_corridor, 12)
-        row("Bridge fraction", self.ent_bridge_frac, 13)
-        row("Bridge width", self.ent_bridge_width, 14)
+        row("Width", self.ent_width, 7)
+        row("Height", self.ent_height, 8)
+        row("Clusters", self.ent_clusters, 9)
+        row("Spread", self.ent_spread, 10)
+        row("Spacing", self.ent_spacing, 11)
+        row("Jitter", self.ent_jitter, 12)
+        row("Corridor width", self.ent_corridor, 13)
+        row("Bridge fraction", self.ent_bridge_frac, 14)
+        row("Bridge width", self.ent_bridge_width, 15)
         ttk.Checkbutton(
             controls,
             text="Show CDS edges",
             variable=self.var_show_edges,
             command=self._on_show_edges_toggled,
-        ).grid(row=15, column=0, columnspan=2, sticky="w", pady=4)
+        ).grid(row=16, column=0, columnspan=2, sticky="w", pady=4)
         ttk.Checkbutton(
             controls,
             text="Dark mode",
             variable=self.var_dark_mode,
             command=self._on_theme_toggled,
-        ).grid(row=16, column=0, columnspan=2, sticky="w", pady=2)
+        ).grid(row=17, column=0, columnspan=2, sticky="w", pady=2)
 
         buttons = ttk.LabelFrame(left, text="Actions", padding=8)
         buttons.pack(fill=tk.X, pady=(8, 0))
@@ -356,6 +366,13 @@ class McdsGui(tk.Tk):
             except VisualizationError:
                 pass
 
+    def _on_color_mode_toggled(self) -> None:
+        if self.csv_path.is_file() and self.result_path.is_file():
+            try:
+                self._refresh_plot()
+            except VisualizationError:
+                pass
+
     def _field_widgets(self) -> dict[str, ttk.Entry]:
         return {
             "width": self.ent_width,
@@ -494,6 +511,7 @@ class McdsGui(tk.Tk):
             data,
             show_cds_edges=self.var_show_edges.get(),
             dark=self.var_dark_mode.get(),
+            color_mode=self.var_color_mode.get() or COLOR_MODE_FINAL,
         )
         self._replace_figure(fig)
 

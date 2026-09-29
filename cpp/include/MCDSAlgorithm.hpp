@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "PointSet.hpp"
@@ -8,11 +9,15 @@
 
 namespace mcds {
 
-/// Output of an MCDS heuristic: selected point ids only.
-///
-/// Timing, validation, and serialization belong to the runner, not here.
+/// Output of an MCDS heuristic: selected point ids, plus optional visualization
+/// metadata that is ignored by validation and experiment CSV semantics.
 struct MCDSResult {
     std::vector<int> selectedIds;
+
+    /// Visualization-only role tags for selected vertices.
+    /// Allowed values: "core", "connector". Empty means roles unavailable.
+    /// Does not affect CDS size or validator behaviour.
+    std::vector<std::pair<int, std::string>> roles;
 };
 
 /// Shared interface for every connected-dominating-set heuristic.

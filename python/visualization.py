@@ -30,6 +30,23 @@ if str(_PYTHON_DIR) not in sys.path:
     sys.path.insert(0, str(_PYTHON_DIR))
 
 from generators import read_csv  # noqa: E402
+from visualization_style import (  # noqa: E402
+    AXIS_PAD_FRACTION,
+    COLOR_MODE_FINAL,
+    COLOR_MODE_ROLES,
+    COLOR_MODES,
+    FIGURE_SIZE,
+    ORDINARY_POINT_SIZE,
+    ROLE_CONNECTOR,
+    ROLE_CORE,
+    ROLE_ORDINARY,
+    SELECTED_POINT_SIZE,
+    color_mode_title_suffix,
+    legend_labels,
+    palette,
+    parse_roles,
+    roles_available,
+)
 
 # CDS edge drawing is skipped when the selected set exceeds this size unless
 # the caller forces it. Avoids an accidental O(k^2) visualization cost.
@@ -277,6 +294,19 @@ def build_title(data: PlotData) -> str:
     return "\n".join(lines)
 
 
+def data_axis_limits(xs: list[float], ys: list[float]) -> tuple[float, float, float, float]:
+    """Shared axis window for same-dataset screenshots across algorithms."""
+    if not xs or not ys:
+        return 0.0, 1.0, 0.0, 1.0
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
+    dx = max_x - min_x
+    dy = max_y - min_y
+    pad_x = dx * AXIS_PAD_FRACTION if dx > 0 else 1.0
+    pad_y = dy * AXIS_PAD_FRACTION if dy > 0 else 1.0
+    return min_x - pad_x, max_x + pad_x, min_y - pad_y, max_y + pad_y
+
+
 def create_figure(
     data: PlotData,
     *,
@@ -285,73 +315,120 @@ def create_figure(
     edge_k_limit: int = DEFAULT_EDGE_K_LIMIT,
     downsample_seed: int = 0,
     dark: bool = False,
+    color_mode: str = COLOR_MODE_FINAL,
 ):
     """Build a matplotlib Figure for the plot data."""
     import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
 
-    if dark:
-        bg = "#1e1e1e"
-        axis_bg = "#252526"
-        point_color = "#8b949e"
-        cds_color = "#f07178"
-        cds_edge = "#8b3a3f"
-        text_color = "#e6edf3"
-        muted_color = "#9da7b3"
-        spine_color = "#3c4048"
-    else:
-        bg = "#ffffff"
-        axis_bg = "#ffffff"
-        point_color = "#9aa5b1"
-        cds_color = "#c0392b"
-        cds_edge = "#5b1a14"
-        text_color = "#1f2933"
-        muted_color = "#4a5560"
-        spine_color = "#cbd2d9"
+    if color_mode not in COLOR_MODES:
+        color_mode = COLOR_MODE_FINAL
 
-    fig, ax = plt.subplots(figsize=(8.0, 8.0))
-    fig.patch.set_facecolor(bg)
-    ax.set_facecolor(axis_bg)
+    colors = palette(dark)
+    roles = parse_roles(data.result)
+    has_roles = bool(roles)
+    effective_mode = color_mode
+    role_fallback_note = False
+    if color_mode == COLOR_MODE_ROLES and not has_roles:
+        role_fallback_note = str(data.result.get("algorithm", "")).lower() not in {
+            "",
+            "none",
+            "null",
+            "preview",
+        }
 
+    fig, ax = plt.subplots(figsize=FIGURE_SIZE)
+    fig.patch.set_facecolor(colors.background)
+    ax.set_facecolor(colors.axis_background)
+
+    keep_ids = set(data.selected_set)
+    if has_roles:
+        keep_ids.update(roles.keys())
     ordinary_indices = downsample_ordinary_indices(
         len(data.point_ids),
-        data.selected_set,
+        keep_ids,
         data.point_ids,
         max_render_points,
         seed=downsample_seed,
     )
-    # Plot only non-selected points in the ordinary layer.
     ox = [data.xs[i] for i in ordinary_indices if data.point_ids[i] not in data.selected_set]
     oy = [data.ys[i] for i in ordinary_indices if data.point_ids[i] not in data.selected_set]
     if ox:
-        ax.scatter(ox, oy, s=8, c=point_color, alpha=0.75, linewidths=0, label="points", zorder=1)
+        ax.scatter(
+            ox,
+            oy,
+            s=ORDINARY_POINT_SIZE,
+            c=colors.ordinary,
+            alpha=0.75,
+            linewidths=0,
+            label="_nolegend_",
+            zorder=1,
+        )
 
     id_to_xy = {pid: (x, y) for pid, x, y in zip(data.point_ids, data.xs, data.ys)}
-    sx = [id_to_xy[sid][0] for sid in data.selected_ids]
-    sy = [id_to_xy[sid][1] for sid in data.selected_ids]
-    if sx:
+
+    def _scatter_selected(ids: list[int], face: str, edge: str) -> None:
+        if not ids:
+            return
+        sx = [id_to_xy[sid][0] for sid in ids if sid in id_to_xy]
+        sy = [id_to_xy[sid][1] for sid in ids if sid in id_to_xy]
+        if not sx:
+            return
         ax.scatter(
             sx,
             sy,
-            s=36,
-            c=cds_color,
-            edgecolors=cds_edge,
+            s=SELECTED_POINT_SIZE,
+            c=face,
+            edgecolors=edge,
             linewidths=0.4,
-            label="CDS",
+            label="_nolegend_",
             zorder=3,
         )
 
+    if effective_mode == COLOR_MODE_ROLES and has_roles:
+        core_ids = [sid for sid in data.selected_ids if roles.get(sid) == ROLE_CORE]
+        conn_ids = [sid for sid in data.selected_ids if roles.get(sid) == ROLE_CONNECTOR]
+        other_ids = [
+            sid
+            for sid in data.selected_ids
+            if roles.get(sid) not in {ROLE_CORE, ROLE_CONNECTOR}
+        ]
+        _scatter_selected(core_ids + other_ids, colors.core, colors.core)
+        _scatter_selected(conn_ids, colors.connector, colors.cds_edge_marker)
+    else:
+        face = colors.cds if effective_mode == COLOR_MODE_FINAL else colors.core
+        edge = colors.cds_edge_marker if effective_mode == COLOR_MODE_FINAL else colors.core
+        _scatter_selected(list(data.selected_ids), face, edge)
+
     edges = cds_edges(data, enabled=show_cds_edges, k_limit=edge_k_limit)
     for x0, y0, x1, y1 in edges:
-        ax.plot([x0, x1], [y0, y1], color=cds_color, alpha=0.45 if dark else 0.35, linewidth=0.8, zorder=2)
+        ax.plot(
+            [x0, x1],
+            [y0, y1],
+            color=colors.edge,
+            alpha=0.40 if dark else 0.35,
+            linewidth=0.8,
+            zorder=2,
+        )
 
-    ax.set_aspect("equal", adjustable="datalim")
+    ax.set_aspect("equal", adjustable="box")
+    xmin, xmax, ymin, ymax = data_axis_limits(data.xs, data.ys)
+    ax.set_xlim(xmin, xmax)
+    ax.set_ylim(ymin, ymax)
 
-    # Figure-level header lines with fixed vertical gaps. Mixing ax.set_title
-    # with a second ax.text above the axes used to make the stats/meta collide.
-    title = algorithm_display_name(data)
+    algo_name = algorithm_display_name(data)
+    mode_suffix = color_mode_title_suffix(effective_mode)
+    if str(data.result.get("algorithm", "")).lower() in {"", "none", "null", "preview"}:
+        title = algo_name
+    else:
+        title = f"{algo_name} — {mode_suffix}"
     stats = build_stats_line(data)
     subtitle = build_subtitle(data)
-    fig.suptitle(title, fontsize=14, fontweight="bold", color=text_color, y=0.975)
+    if role_fallback_note:
+        note = "Role detail unavailable for this algorithm."
+        subtitle = f"{subtitle} | {note}" if subtitle else note
+
+    fig.suptitle(title, fontsize=14, fontweight="bold", color=colors.text, y=0.975)
     fig.text(
         0.5,
         0.915,
@@ -359,7 +436,7 @@ def create_figure(
         ha="center",
         va="center",
         fontsize=10,
-        color=muted_color,
+        color=colors.muted,
         transform=fig.transFigure,
     )
     if subtitle:
@@ -370,22 +447,62 @@ def create_figure(
             ha="center",
             va="center",
             fontsize=10,
-            color=muted_color,
+            color=colors.muted,
             transform=fig.transFigure,
         )
         axes_top = 0.78
     else:
         axes_top = 0.86
 
-    legend = ax.legend(loc="best", frameon=False, labelcolor=text_color)
-    if legend is not None:
-        for text in legend.get_texts():
-            text.set_color(text_color)
-    ax.set_xlabel("x", color=text_color)
-    ax.set_ylabel("y", color=text_color)
-    ax.tick_params(colors=muted_color)
+    algo_key = str(data.result.get("algorithm", ""))
+    legend_items = legend_labels(algo_key, effective_mode, has_roles=has_roles)
+    handles = []
+    labels = []
+    swatch = {
+        ROLE_ORDINARY: colors.ordinary,
+        "cds": colors.cds,
+        ROLE_CORE: colors.core,
+        ROLE_CONNECTOR: colors.connector,
+        "edge": colors.edge,
+    }
+    for key, label in legend_items:
+        if key == "edge" and not show_cds_edges:
+            continue
+        if key == "edge":
+            handles.append(Line2D([0], [0], color=swatch[key], linewidth=1.5))
+        else:
+            size = ORDINARY_POINT_SIZE if key == ROLE_ORDINARY else SELECTED_POINT_SIZE
+            handles.append(
+                Line2D(
+                    [0],
+                    [0],
+                    marker="o",
+                    color="none",
+                    markerfacecolor=swatch[key],
+                    markeredgecolor=swatch[key],
+                    markersize=max(4, size / 4),
+                    linestyle="None",
+                )
+            )
+        labels.append(label)
+    if handles:
+        legend = ax.legend(
+            handles,
+            labels,
+            loc="upper right",
+            frameon=False,
+            fontsize=8,
+            labelcolor=colors.text,
+        )
+        if legend is not None:
+            for text in legend.get_texts():
+                text.set_color(colors.text)
+
+    ax.set_xlabel("x", color=colors.text)
+    ax.set_ylabel("y", color=colors.text)
+    ax.tick_params(colors=colors.muted)
     for spine in ax.spines.values():
-        spine.set_color(spine_color)
+        spine.set_color(colors.spine)
     fig.subplots_adjust(left=0.10, right=0.98, bottom=0.08, top=axes_top)
     return fig
 
@@ -400,11 +517,12 @@ def render(
     max_render_points: int = DEFAULT_MAX_RENDER_POINTS,
     edge_k_limit: int = DEFAULT_EDGE_K_LIMIT,
     downsample_seed: int = 0,
+    color_mode: str = COLOR_MODE_FINAL,
+    dark: bool = False,
 ):
     """High-level entry used by CLI and GUI."""
     data = prepare_plot_data(points_path, result_path)
     if show_cds_edges is None:
-        # Auto: on for small CDS, off for large.
         show_cds_edges = len(data.selected_ids) <= edge_k_limit
 
     fig = create_figure(
@@ -413,6 +531,8 @@ def render(
         max_render_points=max_render_points,
         edge_k_limit=edge_k_limit,
         downsample_seed=downsample_seed,
+        dark=dark,
+        color_mode=color_mode,
     )
 
     if save is not None:
@@ -430,7 +550,6 @@ def render(
         plt.close(fig)
 
     return fig, data
-
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -461,6 +580,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="max ordinary points drawn (CDS always kept)",
     )
     parser.add_argument(
+        "--color-mode",
+        choices=list(COLOR_MODES),
+        default=COLOR_MODE_FINAL,
+        help="Final CDS vs Algorithm roles coloring",
+    )
+    parser.add_argument(
         "--edge-k-limit",
         type=int,
         default=DEFAULT_EDGE_K_LIMIT,
@@ -481,6 +606,7 @@ def main(argv: list[str] | None = None) -> int:
             show_cds_edges=args.show_cds_edges,
             max_render_points=args.max_render_points,
             edge_k_limit=args.edge_k_limit,
+            color_mode=args.color_mode,
         )
     except VisualizationError as exc:
         print(f"error: {exc}", file=sys.stderr)

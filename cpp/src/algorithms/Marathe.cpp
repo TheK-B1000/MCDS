@@ -139,9 +139,11 @@ MCDSResult MaratheAlgorithm::solve(const PointSet& points, const SpatialIndex& i
     const BfsTree tree = buildBfsTree(points, index, radius, root);
 
     std::vector<char> selected(points.size(), 0);
+    std::vector<char> isCore(points.size(), 0);
 
     // IS_0 = {root}, NS_0 = ∅
     selected[root] = 1;
+    isCore[root] = 1;
 
     std::vector<int> neighbors;
     std::vector<char> currentIs(points.size(), 0);
@@ -166,6 +168,7 @@ MCDSResult MaratheAlgorithm::solve(const PointSet& points, const SpatialIndex& i
         std::fill(currentIs.begin(), currentIs.end(), 0);
         for (const std::size_t u : isLevel) {
             selected[u] = 1;
+            isCore[u] = 1;
             currentIs[u] = 1;
 
             const int p = tree.parent[u];
@@ -177,10 +180,15 @@ MCDSResult MaratheAlgorithm::solve(const PointSet& points, const SpatialIndex& i
 
     MCDSResult result;
     result.selectedIds.reserve(points.size());
+    result.roles.reserve(points.size());
     for (std::size_t i = 0; i < points.size(); ++i) {
-        if (selected[i]) {
-            result.selectedIds.push_back(points.idAt(i));
+        if (!selected[i]) {
+            continue;
         }
+        result.selectedIds.push_back(points.idAt(i));
+        // Independent-set members are cores; tree parents added only as connectors
+        // remain connectors (an IS node that is also a parent stays core).
+        result.roles.emplace_back(points.idAt(i), isCore[i] ? "core" : "connector");
     }
     return result;
 }

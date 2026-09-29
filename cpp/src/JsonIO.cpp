@@ -87,7 +87,22 @@ void writeRunResultJson(std::ostream& out, const RunResult& result, bool pretty)
         }
         out << result.selectedIds[i];
     }
-    out << ']' << nl;
+    out << ']';
+
+    if (!result.roles.empty()) {
+        out << ',' << nl;
+        out << sp << "\"roles\"" << colon << '{' << nl;
+        for (std::size_t i = 0; i < result.roles.size(); ++i) {
+            out << sp << sp << '"' << result.roles[i].first << '"' << colon;
+            writeEscaped(out, result.roles[i].second);
+            if (i + 1 < result.roles.size()) {
+                out << ',';
+            }
+            out << nl;
+        }
+        out << sp << '}';
+    }
+    out << nl;
 
     out << '}' << nl;
 }

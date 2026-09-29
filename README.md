@@ -255,6 +255,14 @@ python python/visualization.py \
     --no-show --show-cds-edges
 ```
 
+GUI color modes (visualization only; algorithms unchanged):
+
+- **Final CDS** — ordinary points vs selected CDS nodes (default).
+- **Algorithm roles** — when the result JSON includes optional `roles`,
+  distinguishes core vs connector selected vertices. For Li S-MIS:
+  black/MIS = core, blue/Steiner = connector, grey = ordinary.
+  If roles are missing, the plot falls back to a single selected color.
+
 ### GUI
 
 ```bash

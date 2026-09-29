@@ -234,9 +234,14 @@ MCDSResult LiSMISAlgorithm::solve(
      */
     MCDSResult result;
     result.selectedIds.reserve(n);
+    result.roles.reserve(n);
     for (std::size_t i = 0; i < n; ++i) {
-        if (colour[i] == Colour::Black || colour[i] == Colour::Blue) {
+        if (colour[i] == Colour::Black) {
             result.selectedIds.push_back(points.idAt(i));
+            result.roles.emplace_back(points.idAt(i), "core");
+        } else if (colour[i] == Colour::Blue) {
+            result.selectedIds.push_back(points.idAt(i));
+            result.roles.emplace_back(points.idAt(i), "connector");
         }
     }
     return result;
