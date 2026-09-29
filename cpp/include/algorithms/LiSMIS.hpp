@@ -4,11 +4,13 @@
 
 namespace mcds {
 
-/// Li et al. S-MIS CDS (WCMC 2005, Section 3).
+/// Li et al. S-MIS algorithm.
 ///
-/// See docs/li.md. Wan/Cheng Lemma-2 MIS, then greedy Steiner Algorithm A
-/// (grey→blue by black-blue component count, ignoring blue–blue edges).
-/// Paper guarantee: (4.8 + ln 5) · opt + 1.2.
+/// Step 1: Wan level-based MIS (black nodes).
+/// Step 2: Li greedy Steiner Algorithm A (blue connectors).
+/// Grey nodes are scored by distinct black-blue components via black
+/// neighbors; blue-blue edges are ignored. Final CDS = black ∪ blue.
+/// Bound: (4.8 + ln(5)) * OPT + 1.2. See docs/li.md.
 class LiSMISAlgorithm : public MCDSAlgorithm {
 public:
     MCDSResult solve(const PointSet& points, const SpatialIndex& index, double radius) override;

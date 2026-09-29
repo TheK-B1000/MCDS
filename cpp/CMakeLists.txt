@@ -28,6 +28,7 @@ add_library(mcds_core STATIC
     src/algorithms/Wan.cpp
     src/algorithms/Funke.cpp
     src/algorithms/LiSMIS.cpp
+    src/algorithms/WanLevelMis.cpp
     src/ExactSmallMCDS.cpp
 )
 target_include_directories(mcds_core PUBLIC include)
@@ -72,4 +73,5 @@ mcds_add_test(test_marathe)
 mcds_add_test(test_wan)
 mcds_add_test(test_funke)
 mcds_add_test(test_li_smis)
+mcds_add_test(test_wan_level_mis)
 mcds_add_test(test_exact_small)

@@ -42,17 +42,20 @@ Construct an MIS that satisfies **Lemma 2** (Wan [16] / Cheng [5] property):
 > ⇒ any two MIS nodes are at most two hops apart in the UDG.
 
 Paper: *“We can use the method in Reference [16] or Cheng [5] to construct a MIS.”*  
-Reference [16] = Wan–Alzoubi–Frieder INFOCOM 2002.
+Reference [16] = Wan–Alzoubi–Frieder INFOCOM 2002.  
+Cheng [5] is an **alternative** MIS construction (degree/`(d*, ID)` based); we do **not** claim Cheng equivalence.
 
-**Project choice.** Use the **same MIS construction as our Wan centralized adaptation**:
+**Project choice.** Centralized implementation of **Wan’s level-based MIS**:
 
 1. Leader = smallest point ID  
 2. Deterministic BFS spanning tree  
-3. Greedy MIS by increasing rank `(level, id)`  
+3. Greedy first-fit MIS by increasing rank `(level, id)`  
 
 Mark MIS nodes **black**. All other nodes **grey**.
 
 Do **not** add Wan’s tree-parent connectors here. Connection is Step 2.
+
+Verified in `test_wan_level_mis`: production MIS ≡ paper-literal WHITE/BLACK/GRAY reference; independence; maximality; Lemma 2 via connectivity of the distance-2 graph on MIS vertices.
 
 ### Step 2 — Steiner interconnection (Algorithm A)
 
@@ -78,7 +81,7 @@ return all blue nodes
 
 | Item | Rule |
 | --- | --- |
-| Method | Wan/Cheng spanning-tree MIS (Lemma 2), not arbitrary ID-MIS |
+| Method | Wan level-based spanning-tree MIS (Lemma 2), not Cheng / not arbitrary ID-MIS |
 | Priority | Rank `(BFS level, point ID)`, lexicographic |
 | Join MIS | Node joins if no neighbour already in MIS (scan in rank order) |
 | Degree / uncovered count | **Not** used in Step 1 |
@@ -159,7 +162,7 @@ our measured empirical CDS/OPT:  from ExactSmall experiments only
 
 | | Marathe CDOM | S-MIS |
 | --- | --- | --- |
-| MIS | Per-level MIS in BFS tree | Global Wan/Cheng MIS |
+| MIS | Per-level MIS in BFS tree | Global Wan level-based MIS |
 | Connection | Tree parents of level MIS nodes | Greedy Steiner Algorithm A |
 | Tree dependence | Essential for both phases | Tree only to build Lemma-2 MIS |
 | Bound (paper era) | Classic CDOM analyses | `4.8 + ln 5` |
@@ -168,7 +171,7 @@ our measured empirical CDS/OPT:  from ExactSmall experiments only
 
 | | Wan | S-MIS |
 | --- | --- | --- |
-| MIS | Rank-order MIS (same family) | **Same MIS family** (Wan/Cheng) |
+| MIS | Rank-order MIS (same family) | **Same MIS family** (Wan level-based) |
 | Connection | **Tree parents** of MIS nodes | **Steiner greedy blues** (Algorithm A) |
 | Tree dependence | Parents become CDS | Tree discarded after MIS |
 | Bound | ≤ 8 (INFOCOM’02) | `4.8 + ln 5` |
@@ -179,7 +182,7 @@ S-MIS is **not** “Wan with a better label”: the connector stage is different
 
 | | Funke | S-MIS |
 | --- | --- | --- |
-| MIS | Growing red-frontier local-min-ID | Wan/Cheng rank MIS |
+| MIS | Growing red-frontier local-min-ID | Wan level-based rank MIS |
 | Connection | Blue recruiter → grey | Multi-component grey→blue Steiner |
 | Frontier dependence | Essential | None in Step 2 |
 | Bound | ≤ 6.91 (TOSN’06 analysis) | `4.8 + ln 5` |
@@ -190,7 +193,7 @@ S-MIS is **not** “Wan with a better label”: the connector stage is different
 
 | Paper | Centralized |
 | --- | --- |
-| Wan/Cheng MIS messages | State arrays + BFS + rank MIS (as Wan) |
+| Wan level-based MIS messages | State arrays + BFS + rank MIS (as Wan) |
 | Grey `y`-value | `radiusQuery` + count distinct DSU roots among black neighbours |
 | Pick next blue | Among greys with `y ≥ i`, choose max `(y, −id)` i.e. highest `y`, then smallest ID |
 | Merge components | Union-Find on black indices |
@@ -222,7 +225,7 @@ Optional instrumentation: track `|MIS|` and number of blues selected (already im
 
 | Choice | Paper | Project |
 | --- | --- | --- |
-| MIS construction | Wan [16] / Cheng | Our Wan MIS (min-ID leader, BFS, rank) |
+| MIS construction | Wan [16] (or Cheng) | Wan level-based MIS (min-ID leader, BFS, rank) |
 | Which grey when several have `y ≥ i` | Distributed: larger `y`, then smaller ID | Same: maximize `y`, then minimize ID |
 | DSU union parent | Unspecified | Smaller component root ID (or smaller black ID) |
 | Neighbour scan order | Unspecified | Ascending neighbour ID |
@@ -245,7 +248,7 @@ Result: selected IDs = black ∪ blue. No I/O / timing / validation inside the a
 ## 12. Executable pseudocode (centralized)
 
 ```text
-# Step 1 — Lemma-2 MIS (Wan-style)
+# Step 1 — Lemma-2 MIS (Wan level-based)
 T ← BFS tree from min-ID leader
 MIS ← greedy independent set by increasing (level_T, id)
 colour[u] ← BLACK if u ∈ MIS else GREY
@@ -274,8 +277,8 @@ return IDs of all BLACK ∪ BLUE
 
 ## Ambiguities
 
-1. **Exact Cheng [5] vs Wan [16] MIS.** Both cited for Lemma 2. We use Wan-style MIS already in-repo (documented).  
+1. **Cheng [5] vs Wan [16] MIS.** Both cited for Lemma 2. We implement **Wan level-based MIS only** (Cheng uses different selection mechanics).  
 2. **Centralized grey selection order** within equal `i`. Resolved via distributed ranking `(y, ID)`.  
 3. **Later corrections to `4.8 + ln 5`.** Documented as external debate; we still cite Theorem 1 as stated.
 
-None block a faithful Algorithm A + Wan/Cheng MIS implementation.
+None block a faithful Algorithm A + Wan level-based MIS implementation.
