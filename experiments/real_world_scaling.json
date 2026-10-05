@@ -1,38 +1,18 @@
 {
-  "batch_id": "real_world_scaling",
-  "study_name": "real_world_scaling",
+  "study_id": "real_world_scaling",
+  "study_seed": 20261008,
+  "description": "TEMPLATE (RQ9). Replace paths with canonical CSVs produced by python/import_dataset.py (projected, metres). Each entry carries its own radii (radius sweep). Disconnected inputs are recorded, never repaired silently; use prepare_real_dataset.py --largest-connected-component explicitly if that is the pre-declared rule.",
   "algorithms": ["marathe", "wan", "funke", "li"],
-  "datasets": [
-    {
-      "name": "real_placeholder_100k",
-      "path": "datasets/real/placeholder_100k.csv",
-      "radius": 100.0,
-      "radius_units": "meters"
-    },
-    {
-      "name": "real_placeholder_250k",
-      "path": "datasets/real/placeholder_250k.csv",
-      "radius": 100.0,
-      "radius_units": "meters"
-    },
-    {
-      "name": "real_placeholder_500k",
-      "path": "datasets/real/placeholder_500k.csv",
-      "radius": 100.0,
-      "radius_units": "meters"
-    },
-    {
-      "name": "real_placeholder_1m",
-      "path": "datasets/real/placeholder_1m.csv",
-      "radius": 100.0,
-      "radius_units": "meters"
-    }
-  ],
-  "require_connected": true,
-  "timing_repetitions": 1,
-  "warmup_runs": 0,
-  "study_dir": "results/studies/real_world_scaling",
-  "max_runtime_seconds": 1800,
-  "max_peak_memory_mb": 16384,
-  "notes": "Replace placeholder paths with imported canonical CSVs from python/import_dataset.py / prepare_real_dataset.py before launching. Do not compare meter radii to synthetic radius=1."
+  "external": {
+    "datasets": [
+      {"name": "region_A_100k", "path": "datasets/real/region_A_100k.csv", "radii": [50.0, 100.0, 200.0],
+       "units": "meters", "source_path": "data/raw/region_A.geojson",
+       "notes": "placeholder; do not run until the CSV exists"}
+    ]
+  },
+  "timing": {"repetitions": 3, "warmups": 1, "instrumentation": "none", "process_mode": "shared",
+             "validate": "all", "timeout_seconds": 7200},
+  "memory_probe": true,
+  "counter_pass": "basic",
+  "exact": {"max_n": 0}
 }

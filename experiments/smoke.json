@@ -1,21 +1,25 @@
 {
-  "batch_id": "smoke",
+  "study_id": "smoke",
+  "study_seed": 20261005,
+  "description": "End-to-end smoke test of the experiment pipeline. Not a scientific study.",
   "algorithms": ["marathe", "wan", "funke", "li"],
-  "distributions": ["uniform", "clustered", "perturbed_grid", "corridor", "cluster_bridge"],
-  "sizes": [100, 300],
-  "seeds": [1],
-  "densities": [5.0],
-  "radius": 1.0,
-  "require_connected": true,
-  "max_connectivity_attempts": 40,
-  "timing_repetitions": 1,
-  "distribution_parameters": {
-    "clustered": {"clusters": 4, "spread": 0.8},
-    "corridor": {"corridor_width": 3.0},
-    "cluster_bridge": {"clusters": 3, "spread": 0.45, "bridge_fraction": 0.2, "bridge_width": 0.6},
-    "perturbed_grid": {"jitter": 0.15}
+  "synthetic": {
+    "geometries": ["uniform", "clustered", "perturbed_grid", "corridor", "cluster_bridge"],
+    "sizes": [200],
+    "densities": [8.0],
+    "radius": 1.0,
+    "replicates": 2,
+    "geometry_parameters": {
+      "clustered": {"clusters": 4, "spread": 0.8},
+      "corridor": {"corridor_width": 3.0},
+      "cluster_bridge": {"clusters": 3, "spread": 0.45, "bridge_fraction": 0.2, "bridge_width": 0.6},
+      "perturbed_grid": {"jitter": 0.15}
+    }
   },
-  "study_dir": "results/studies/smoke",
-  "max_runtime_seconds": 120,
-  "max_peak_memory_mb": 2048
+  "connectivity_rule": {"mode": "resample_until_connected", "max_attempts": 50},
+  "timing": {"repetitions": 3, "warmups": 1, "instrumentation": "none", "process_mode": "shared",
+             "validate": "all", "timeout_seconds": 600},
+  "memory_probe": true,
+  "counter_pass": "basic",
+  "exact": {"max_n": 0}
 }

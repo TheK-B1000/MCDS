@@ -1,5 +1,9 @@
 # Marathe et al. Connected Domination Heuristic (CDOM)
 
+> **Historical design note (pre-audit).** Written before the primary-source audit and kept for
+> history. Where it differs from the code or the audit, the authoritative page is
+> [algorithms/marathe.md](algorithms/marathe.md); source status is in [source_audit.md](source_audit.md).
+
 Source (authoritative):
 
 > M. V. Marathe, H. Breu, H. B. Hunt III, S. S. Ravi, D. J. Rosenkrantz,

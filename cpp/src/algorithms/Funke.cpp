@@ -5,8 +5,6 @@
 #include <stdexcept>
 #include <vector>
 
-#include "Connectivity.hpp"
-
 namespace mcds {
 namespace {
 
@@ -21,10 +19,9 @@ MCDSResult FunkeAlgorithm::solve(const PointSet& points, const SpatialIndex& ind
     if (points.empty()) {
         return MCDSResult{};
     }
-    if (!isConnected(points, index, radius)) {
-        throw std::invalid_argument(
-            "FunkeAlgorithm: input UDG is not connected; refuse to run");
-    }
+    // Connectivity is a precondition verified once, untimed, for all four
+    // algorithms by the experiment runner / CLI. A disconnected input is still
+    // rejected below: the red frontier dies out while white vertices remain.
 
     const std::size_t n = points.size();
     std::vector<Colour> colour(n, Colour::White);
@@ -54,8 +51,10 @@ MCDSResult FunkeAlgorithm::solve(const PointSet& points, const SpatialIndex& ind
             break;
         }
         if (!hasRed) {
-            // Connected UDG should not strand whites without a red frontier.
-            throw std::runtime_error("FunkeAlgorithm: whites remain without red frontier");
+            // Only possible when some vertex is unreachable from the leader.
+            throw std::invalid_argument(
+                "FunkeAlgorithm: input UDG is not connected (red frontier exhausted with white "
+                "vertices left); refuse to run");
         }
 
         // Phases I–II: reds with locally minimal ID among red neighbours win.

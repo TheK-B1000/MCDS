@@ -10,8 +10,9 @@ namespace mcds {
 /// deterministic tie-breaking (smallest-index root; ascending-id neighbour
 /// scan for BFS; smallest-id MIS pivots).
 ///
-/// Preconditions: the UDG must be connected. The algorithm does not check
-/// connectivity itself; the CLI / experiment runner is responsible for that.
+/// Preconditions: the UDG must be connected. `solve` throws
+/// std::invalid_argument when its BFS does not reach every vertex (the check
+/// is a by-product of the BFS the algorithm needs anyway).
 class MaratheAlgorithm : public MCDSAlgorithm {
 public:
     MCDSResult solve(const PointSet& points, const SpatialIndex& index, double radius) override;

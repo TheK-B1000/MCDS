@@ -1,5 +1,9 @@
 # Wan–Alzoubi–Frieder CDS Algorithm
 
+> **Historical design note (pre-audit).** Written before the primary-source audit and kept for
+> history. Where it differs from the code or the audit, the authoritative page is
+> [algorithms/wan.md](algorithms/wan.md); source status is in [source_audit.md](source_audit.md).
+
 ## Bibliographic source
 
 Peng-Jun Wan, Khaled M. Alzoubi, Ophir Frieder.  

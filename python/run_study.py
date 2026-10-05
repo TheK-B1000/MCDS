@@ -1,146 +1,134 @@
-"""One-command study orchestration for the MCDS experiment laboratory."""
+"""The project's experiment runner (single entry point).
+
+    py -3 python/run_study.py reproduce --config experiments/smoke.json
+    py -3 python/run_study.py run       --config ...   # datasets + executions + raw CSVs + fairness
+    py -3 python/run_study.py analyze   --config ...   # summary / paired / validity CSVs
+    py -3 python/run_study.py figures   --config ...
+    py -3 python/run_study.py rebuild   --config ...   # re-derive CSVs from stored artifacts
+    py -3 python/run_study.py manifest  --config ...
+    py -3 python/run_study.py plan      --config ...   # print the design, run nothing
+
+`reproduce` = run + analyze + figures + manifest, and exits non-zero if the
+fairness check fails. Re-running the same command resumes an interrupted study.
+"""
 
 from __future__ import annotations
 
 import argparse
 import json
 import sys
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
-_PYTHON_DIR = Path(__file__).resolve().parent
-if str(_PYTHON_DIR) not in sys.path:
-    sys.path.insert(0, str(_PYTHON_DIR))
+_HERE = Path(__file__).resolve().parent
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
 
-from experiment_runner import load_config, run_campaign  # noqa: E402
-from gui_support import find_repo_root  # noqa: E402
-from lab_utils import config_sha256, log_line  # noqa: E402
+from study import analysis, config as config_mod, datasets, figures, manifest  # noqa: E402
+from study.runner import Study, StudyError  # noqa: E402
+from study.schedule import execution_order, schedule_index  # noqa: E402
 
-
-def _study_already_complete(state_path: Path) -> bool:
-    if not state_path.is_file():
-        return False
-    try:
-        state = json.loads(state_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError:
-        return False
-    return state.get("status") in {"completed", "completed_with_failures"} and not state.get(
-        "interrupted"
-    )
+REPO_ROOT = _HERE.parent
 
 
-def prepare_study_dirs(repo: Path, config: dict[str, Any], config_path: Path) -> dict[str, Any]:
-    """Ensure study_dir layout exists and rewrite relative paths into it."""
-    batch_id = config.get("batch_id")
-    if not batch_id:
-        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        batch_id = f"{config_path.stem}_{stamp}"
-    study_dir = repo / config.get("study_dir", f"results/studies/{batch_id}")
-    study_dir = study_dir if study_dir.is_absolute() else repo / study_dir
-    (study_dir / "datasets").mkdir(parents=True, exist_ok=True)
-    (study_dir / "runs").mkdir(parents=True, exist_ok=True)
-    (study_dir / "plots").mkdir(parents=True, exist_ok=True)
+def _study(args) -> Study:
+    return Study(Path(args.config), REPO_ROOT, allow_dirty=args.allow_dirty,
+                 allow_environment_change=args.allow_environment_change)
 
-    # Mutate a copy used for the campaign.
-    cfg = dict(config)
-    cfg["batch_id"] = batch_id
-    cfg["study_dir"] = str(study_dir.relative_to(repo)).replace("\\", "/")
-    cfg.setdefault("datasets_dir", str((study_dir / "datasets").relative_to(repo)).replace("\\", "/"))
-    cfg.setdefault("results_dir", str((study_dir / "runs").relative_to(repo)).replace("\\", "/"))
-    cfg.setdefault(
-        "experiments_csv",
-        str((study_dir / "experiments.csv").relative_to(repo)).replace("\\", "/"),
-    )
-    cfg.setdefault(
-        "manifest_path",
-        str((study_dir / "batch_manifest.json").relative_to(repo)).replace("\\", "/"),
-    )
-    return {"batch_id": batch_id, "study_dir": study_dir, "config": cfg}
+
+def cmd_plan(args) -> int:
+    cfg = config_mod.load(Path(args.config))
+    planned = datasets.plan(cfg)
+    t = cfg["timing"]
+    print(f"study_id      {cfg['study_id']}  (config sha256 {config_mod.config_sha256(cfg)[:12]})")
+    print(f"algorithms    {cfg['algorithms']}")
+    print(f"datasets      {len(planned)} planned graphs in {len({p.cell_id for p in planned})} cells")
+    print(f"connectivity  {cfg['connectivity_rule']}")
+    print(f"timing        reps={t['repetitions']} warmups={t['warmups']} instrumentation={t['instrumentation']} "
+          f"mode={t['process_mode']}")
+    execs = len(planned) * len(cfg["algorithms"]) * (t["repetitions"] + t["warmups"])
+    print(f"executions    {execs} timed+warmup algorithm executions (+ memory probes / counter pass)")
+    for p in planned[: min(8, len(planned))]:
+        order, row = execution_order(cfg["algorithms"], cfg["study_seed"], schedule_index(cfg["study_seed"], p.__dict__))
+        print(f"  [{p.plan_index}] {p.dataset_id}  order={'>'.join(order)} (row {row})")
+    if len(planned) > 8:
+        print(f"  ... {len(planned) - 8} more")
+    return 0
+
+
+def cmd_run(args) -> int:
+    study = _study(args)
+    result = study.run(datasets_only=args.datasets_only, skip_preflight=args.skip_preflight)
+    print(json.dumps({"out": result["out"], "rows": result["rows"], "fairness_passed": result["fairness"]["passed"]},
+                     indent=2))
+    return 0 if result["fairness"]["passed"] else 3
+
+
+def cmd_rebuild(args) -> int:
+    study = _study(args)
+    result = study.rebuild()
+    print(json.dumps({"rows": result["rows"], "fairness_passed": result["fairness"]["passed"]}, indent=2))
+    return 0 if result["fairness"]["passed"] else 3
+
+
+def _out_dir(args) -> tuple[Path, dict]:
+    cfg = config_mod.load(Path(args.config))
+    out = Path(cfg["output_dir"])
+    return (out if out.is_absolute() else REPO_ROOT / out), cfg
+
+
+def cmd_analyze(args) -> int:
+    out, cfg = _out_dir(args)
+    print(json.dumps(analysis.analyze(out, cfg["algorithms"]), indent=2))
+    return 0
+
+
+def cmd_figures(args) -> int:
+    out, _ = _out_dir(args)
+    written = figures.make_all(out)
+    print(f"{len(written)} figure(s) written to {out / 'figures'}")
+    return 0
+
+
+def cmd_manifest(args) -> int:
+    out, _ = _out_dir(args)
+    print(manifest.write(out))
+    return 0
+
+
+def cmd_reproduce(args) -> int:
+    code = cmd_run(args)
+    if code != 0:
+        print("fairness check FAILED; see fairness_report.json. Analysis not produced.", file=sys.stderr)
+        return code
+    cmd_analyze(args)
+    cmd_figures(args)
+    cmd_manifest(args)
+    return 0
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run a complete MCDS study pipeline.")
-    parser.add_argument("--config", required=True, help="experiment JSON config")
-    parser.add_argument("--force", action="store_true", help="rerun completed trials")
-    parser.add_argument("--dry-run", action="store_true", help="preview only")
-    parser.add_argument("--no-progress", action="store_true")
-    parser.add_argument("--verbose", action="store_true")
-    parser.add_argument("--skip-preflight", action="store_true")
-    parser.add_argument("--no-memory", action="store_true")
-    parser.add_argument("--no-plots", action="store_true")
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = parser.add_subparsers(dest="command", required=True)
+    handlers = {"plan": cmd_plan, "run": cmd_run, "rebuild": cmd_rebuild, "analyze": cmd_analyze,
+                "figures": cmd_figures, "manifest": cmd_manifest, "reproduce": cmd_reproduce}
+    for name in handlers:
+        p = sub.add_parser(name)
+        p.add_argument("--config", required=True)
+        p.add_argument("--allow-dirty", action="store_true", help="permit a final study on a dirty git tree")
+        p.add_argument("--allow-environment-change", action="store_true",
+                       help="permit resuming after the machine/solver/commit changed (recorded per row)")
+        if name in ("run", "reproduce"):
+            p.add_argument("--datasets-only", action="store_true")
+            p.add_argument("--skip-preflight", action="store_true",
+                           help="skip the small all-algorithms validity check before a campaign")
+        else:
+            p.set_defaults(datasets_only=False, skip_preflight=False)
     args = parser.parse_args(argv)
-
-    repo = find_repo_root()
-    config_path = Path(args.config)
-    if not config_path.is_file():
-        config_path = repo / args.config
-    raw = load_config(config_path)
-    prepared = prepare_study_dirs(repo, raw, config_path)
-    study_dir: Path = prepared["study_dir"]
-    cfg: dict[str, Any] = prepared["config"]
-
-    state_path = study_dir / "batch_state.json"
-    if not args.force and not args.dry_run and _study_already_complete(state_path):
-        print("Study already complete.")
-        print("Use --force to rerun.")
-        return 0
-
-    # Write a temporary config with study paths so campaign uses them.
-    tmp_config = study_dir / "resolved_config.json"
-    cfg["config_sha256"] = config_sha256(raw)
-    tmp_config.write_text(json.dumps(cfg, indent=2) + "\n", encoding="utf-8")
-
-    stats = run_campaign(
-        tmp_config,
-        force=args.force,
-        measure_memory=not args.no_memory,
-        show_progress=not args.no_progress,
-        verbose=args.verbose,
-        dry_run=args.dry_run,
-        skip_preflight=args.skip_preflight,
-    )
-
-    if stats.get("dry_run"):
-        return 0
-    if stats.get("preflight_failed"):
-        return 2
-    if stats.get("interrupted"):
-        return 130
-
-    experiments_csv = Path(stats.get("experiments_csv", study_dir / "experiments.csv"))
-
-    # Failures + summary
     try:
-        from study_report import generate_study_report
-
-        generate_study_report(
-            study_dir,
-            experiments_csv,
-            study_dir / "batch_manifest.json",
-            study_dir / "batch_state.json",
-        )
-    except Exception as exc:  # noqa: BLE001
-        log_line(f"WARNING: study report failed: {exc}", progress=False, verbose=True)
-
-    # Plots
-    if not args.no_plots:
-        try:
-            from plots import generate_plots
-
-            exact = repo / "results" / "exact_small_study.csv"
-            paths = generate_plots(
-                experiments_csv,
-                study_dir / "plots",
-                exact if exact.is_file() else None,
-            )
-            for path in paths:
-                log_line(f"wrote {path}", progress=False, verbose=True)
-        except Exception as exc:  # noqa: BLE001
-            log_line(f"WARNING: plot generation failed: {exc}", progress=False, verbose=True)
-
-    print(json.dumps({k: stats[k] for k in stats if k != "preview"}, indent=2))
-    return 0 if stats.get("runs_failed", 0) == 0 and stats.get("datasets_failed", 0) == 0 else 1
+        return handlers[args.command](args)
+    except (StudyError, config_mod.ConfigError, FileNotFoundError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":

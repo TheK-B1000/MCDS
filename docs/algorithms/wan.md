@@ -1,6 +1,6 @@
 # Paper-to-code audit: Wan–Alzoubi–Frieder
 
-Audit date: 2026-10-05. Code: `main` @ `06bf246`. No algorithm code was changed.
+Audit date: 2026-10-05. Code: `main` @ `06bf246`; pruning rule added afterwards (same date), see mapping.
 
 ## Citation
 
@@ -56,17 +56,18 @@ Theorem 8: the final black nodes form a CDS. Lemma 9: any independent set has si
 | Rank `(level, ID)` | `rankLess` on BFS depth and point id |
 | Type-1 black | Greedy first-fit: in increasing rank, select `u` iff no neighbour is already selected. This is the sequential form of “lower-rank neighbours have all sent `DOMINATEE`” |
 | Type-2 black | For every selected vertex except the leader, add `tree.parent` |
-| Pruning rule | **Not implemented** |
+| Pruning rule | Implemented in `solve` (2026-10-05): a selected vertex with ≥ 1 neighbour, all neighbours selected, and rank higher than every neighbour is removed. Evaluated on the type-1 ∪ type-2 set; its radius queries are inside `T_algorithm` |
 | Output | Selected ids; role `core` if type-1, else `connector` |
 
-`test_wan_level_mis` differentially checks the type-1 set against a separate WHITE/BLACK/GRAY reference of the same rank rule, and checks independence, maximality, and Li’s two-hop property. That suite does not execute the pruning rule and does not build the Cidon–Mokryn tree.
+`test_wan_level_mis` differentially checks the type-1 set against a separate WHITE/BLACK/GRAY reference of the same rank rule, and checks independence, maximality, and Li’s two-hop property. It does not build the Cidon–Mokryn tree. `test_wan` checks the pruning against an independent reconstruction of the pre-pruning set with the §VI.A rule applied asynchronously (random orders, to a fixpoint) on ≥ 1,000 random connected UDGs: identical output, pruned vertices are always type-1, every result is a valid CDS.
 
 ## Intentional adaptations
 
 - Centralized. No messages, no `COMPLETE` reports, no asynchronous schedule.
 - Leader is minimum id, which the paper explicitly allows.
 - The spanning tree is a BFS tree, not the tree produced by [5]. The §VI counting argument uses whatever spanning tree phase 1 produced: type-1 nodes are an independent set (Lemma 9) and each non-root type-1 node contributes its tree parent as a type-2 node. A BFS tree is a spanning tree, so that algebra still applies.
-- The pruning sentence is omitted. It fires only when every neighbour is already black, and the message it would send is `DOMINATOR` to neighbours that are already black, so it does not create new black nodes under the stated transitions. It only removes a node from the CDS. Our output is therefore the pre-pruning type-1 ∪ type-2 set, which is what the `8·opt + 1` count bounds. It can be a strict superset of a full §VI.A execution.
+- The pruning rule (fourth bullet of §VI.A; black→gray edge of Fig. 5) is applied once to the final type-1 ∪ type-2 set. This equals any asynchronous execution order: an eligible node outranks all its neighbours, so none of them is eligible, and removing it never changes another node's eligibility. Why it cannot break the CDS (argument from the Theorem 8 proof, not a lemma in the paper): an eligible node has no tree children (a child would be a higher-ranked neighbour), so it is never the parent `u₂` on a black path; it turned black only after all lower-ranked neighbours were already gray, so it is never the `u₃` that first grayed a node; and all its neighbours are black, so it dominates nobody exclusively.
+- Vacuous case: a node with no neighbours (n = 1) is not pruned, so the CDS stays nontrivial as Theorem 8 states.
 
 ## Implementation-specific decisions
 
@@ -82,10 +83,10 @@ Theorem 8: the final black nodes form a CDS. Lemma 9: any independent set has si
 
 **Paper derivation that matches our set:** `|type-1 ∪ type-2| ≤ 8·opt + 1`.
 
-**Applies to our implementation: yes, for that inequality**, because we output exactly those two types on a spanning tree, and Lemma 9 is a bound on any independent set.
+**Applies to our implementation: yes.** Before pruning we hold exactly those two types on a spanning tree, and Lemma 9 bounds any independent set; pruning only removes vertices, so the output also satisfies `|D| ≤ 8·opt + 1`.
 
 **Not claimed:** `O(n)` time and `O(n log n)` messages (Theorem 10’s complexity clauses). We do not run the distributed protocol.
 
-**Not claimed as identical output:** a complete execution of §VI.A that applies the pruning rule.
+**Not claimed as identical output:** a distributed execution on the Cidon–Mokryn tree. With a different spanning tree, levels and ranks differ, so the selected vertices can differ.
 
-`IMPLEMENTATION VERIFIED: PARTIAL`
+`IMPLEMENTATION VERIFIED: YES` (selection rules incl. pruning; spanning tree is BFS — see adaptations)

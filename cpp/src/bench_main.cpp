@@ -1,0 +1,643 @@
+// mcds_bench — measurement driver for python/run_study.py.
+//
+// One process = one graph. The point set is loaded once and the spatial index
+// is built once; every algorithm then runs against that same in-memory graph in
+// the execution order given on the command line (the Python orchestrator
+// supplies a seeded, balanced order). Repetitions are interleaved:
+//
+//     warmup 1:  A B C D
+//     ...
+//     timed 1:   A B C D
+//     timed 2:   A B C D
+//
+// Timed region = `algorithm->solve(points, index, radius)` and nothing else.
+// Index-stat reset happens before the clock starts; validation, hashing and
+// JSON writing happen after it stops. No I/O occurs between the two clock
+// reads.
+//
+// When compiled with MCDS_HEAP_TRACKING=1 (target `mcds_bench_mem`), every
+// execution is a memory probe: heap counters are reset before `solve` and read
+// after it. Those runs are never used for timing.
+
+#include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <exception>
+#include <fstream>
+#include <iomanip>
+#include <memory>
+#include <ratio>
+#include <sstream>
+#include <string>
+#include <unordered_set>
+#include <vector>
+
+#include "CsvIO.hpp"
+#include "ExactSmallMCDS.hpp"
+#include "GridSpatialIndex.hpp"
+#include "PointSet.hpp"
+#include "Validator.hpp"
+#include "algorithms/Funke.hpp"
+#include "algorithms/LiSMIS.hpp"
+#include "algorithms/Marathe.hpp"
+#include "algorithms/Wan.hpp"
+#include "bench/BenchSupport.hpp"
+#include "bench/BuildInfo.hpp"
+
+#ifndef MCDS_HEAP_TRACKING
+#define MCDS_HEAP_TRACKING 0
+#endif
+
+#if MCDS_HEAP_TRACKING
+#include "bench/HeapTracker.hpp"
+#endif
+
+#ifndef MCDS_BUILD_CONFIG
+#define MCDS_BUILD_CONFIG "unknown"
+#endif
+
+namespace {
+
+using Clock = std::chrono::steady_clock;
+namespace bench = mcds::bench;
+
+constexpr const char* kSchema = "mcds-bench/1";
+constexpr std::size_t kExactHardMaxN = 20;
+
+// ---------------------------------------------------------------------------
+// Minimal JSON writer (no third-party dependency).
+// ---------------------------------------------------------------------------
+class Json {
+public:
+    explicit Json(std::ostream& out) : out_(out) {}
+
+    void beginObject() { open('{'); }
+    void endObject() { close('}'); }
+    void beginArray() { open('['); }
+    void endArray() { close(']'); }
+
+    void key(const char* k) {
+        comma();
+        str(k);
+        out_ << ':';
+        pendingValue_ = true;
+    }
+
+    void value(const std::string& v) { pre(); str(v.c_str()); }
+    void value(const char* v) { pre(); str(v); }
+    void value(bool v) { pre(); out_ << (v ? "true" : "false"); }
+    void value(std::uint64_t v) { pre(); out_ << v; }
+    void value(std::int64_t v) { pre(); out_ << v; }
+    void value(int v) { pre(); out_ << v; }
+    void value(double v) {
+        pre();
+        if (!std::isfinite(v)) {
+            out_ << "null";
+            return;
+        }
+        std::ostringstream s;
+        s << std::setprecision(17) << v;
+        out_ << s.str();
+    }
+    void null() { pre(); out_ << "null"; }
+
+    template <typename T>
+    void field(const char* k, const T& v) {
+        key(k);
+        value(v);
+    }
+
+private:
+    void open(char c) {
+        pre();
+        out_ << c;
+        first_.push_back(true);
+    }
+    void close(char c) {
+        first_.pop_back();
+        out_ << c;
+    }
+    void comma() {
+        if (!first_.empty()) {
+            if (!first_.back()) {
+                out_ << ',';
+            }
+            first_.back() = false;
+        }
+    }
+    void pre() {
+        if (pendingValue_) {
+            pendingValue_ = false;
+            return;
+        }
+        comma();
+    }
+    void str(const char* s) {
+        out_ << '"';
+        for (const char* p = s; *p; ++p) {
+            const unsigned char ch = static_cast<unsigned char>(*p);
+            switch (ch) {
+                case '"': out_ << "\\\""; break;
+                case '\\': out_ << "\\\\"; break;
+                case '\n': out_ << "\\n"; break;
+                case '\r': out_ << "\\r"; break;
+                case '\t': out_ << "\\t"; break;
+                default:
+                    if (ch < 0x20) {
+                        char buf[8];
+                        std::snprintf(buf, sizeof(buf), "\\u%04x", ch);
+                        out_ << buf;
+                    } else {
+                        out_ << static_cast<char>(ch);
+                    }
+            }
+        }
+        out_ << '"';
+    }
+
+    std::ostream& out_;
+    std::vector<bool> first_;
+    bool pendingValue_ = false;
+};
+
+// ---------------------------------------------------------------------------
+// Options
+// ---------------------------------------------------------------------------
+enum class Instrumentation { None, Basic, Detailed };
+
+const char* instrumentationName(Instrumentation i) {
+    switch (i) {
+        case Instrumentation::None: return "none";
+        case Instrumentation::Basic: return "basic";
+        case Instrumentation::Detailed: return "detailed";
+    }
+    return "none";
+}
+
+struct Options {
+    std::string input;
+    std::string output;
+    double radius = 1.0;
+    std::vector<std::string> algorithms;
+    int repetitions = 1;
+    int warmups = 0;
+    Instrumentation instrumentation = Instrumentation::None;
+    bool validateAll = true;
+    std::size_t exactMaxN = 0;
+    bool graphOnly = false;
+    bool runDisconnected = false;
+    bool emitSolution = false;
+};
+
+void usage() {
+    std::printf(
+        "usage: mcds_bench --input F.csv --output out.json [--radius R]\n"
+        "                  [--algorithms a,b,c,d] [--repetitions N] [--warmups W]\n"
+        "                  [--instrumentation none|basic|detailed] [--validate all|first]\n"
+        "                  [--exact-max-n K] [--graph-only] [--run-disconnected] [--emit-solution]\n"
+        "\n"
+        "Algorithms run in the order given; repetitions are interleaved across algorithms.\n");
+}
+
+std::vector<std::string> splitCsv(const std::string& s) {
+    std::vector<std::string> out;
+    std::string cur;
+    for (const char c : s) {
+        if (c == ',') {
+            if (!cur.empty()) out.push_back(cur);
+            cur.clear();
+        } else {
+            cur.push_back(c);
+        }
+    }
+    if (!cur.empty()) out.push_back(cur);
+    return out;
+}
+
+std::unique_ptr<mcds::MCDSAlgorithm> makeAlgorithm(const std::string& name) {
+    if (name == "marathe") return std::make_unique<mcds::MaratheAlgorithm>();
+    if (name == "wan") return std::make_unique<mcds::WanAlgorithm>();
+    if (name == "funke") return std::make_unique<mcds::FunkeAlgorithm>();
+    if (name == "li") return std::make_unique<mcds::LiSMISAlgorithm>();
+    return nullptr;
+}
+
+double msSince(Clock::time_point t0) {
+    return std::chrono::duration<double, std::milli>(Clock::now() - t0).count();
+}
+
+/// Smallest non-zero difference between consecutive clock reads; reported so
+/// readers can judge whether sub-millisecond timings are meaningful.
+std::int64_t observedClockResolutionNs() {
+    std::int64_t best = 0;
+    for (int trial = 0; trial < 200; ++trial) {
+        const auto a = Clock::now();
+        auto b = Clock::now();
+        while (b == a) {
+            b = Clock::now();
+        }
+        const std::int64_t d = std::chrono::duration_cast<std::chrono::nanoseconds>(b - a).count();
+        if (best == 0 || d < best) {
+            best = d;
+        }
+    }
+    return best;
+}
+
+void writeBuild(Json& j) {
+    j.key("build");
+    j.beginObject();
+    j.field("config", MCDS_BUILD_CONFIG);
+    j.field("compiler_id", MCDS_CXX_COMPILER_ID);
+    j.field("compiler_version", MCDS_CXX_COMPILER_VERSION);
+    j.field("cxx_standard", static_cast<std::int64_t>(MCDS_CXX_STANDARD));
+#if defined(_MSVC_LANG)
+    j.field("cplusplus_macro", static_cast<std::int64_t>(_MSVC_LANG));
+#else
+    j.field("cplusplus_macro", static_cast<std::int64_t>(__cplusplus));
+#endif
+    j.field("cxx_flags", MCDS_CXX_FLAGS);
+    const std::string config = MCDS_BUILD_CONFIG;
+    const char* configFlags = "";
+    if (config == "Release") configFlags = MCDS_CXX_FLAGS_RELEASE;
+    else if (config == "Debug") configFlags = MCDS_CXX_FLAGS_DEBUG;
+    else if (config == "RelWithDebInfo") configFlags = MCDS_CXX_FLAGS_RELWITHDEBINFO;
+    else if (config == "MinSizeRel") configFlags = MCDS_CXX_FLAGS_MINSIZEREL;
+    j.field("cxx_flags_config", configFlags);
+    j.field("target_warning_flags", MCDS_TARGET_WARNING_FLAGS);
+    j.field("generator", MCDS_CMAKE_GENERATOR);
+    j.field("system", MCDS_CMAKE_SYSTEM);
+#if defined(NDEBUG)
+    j.field("ndebug", true);
+#else
+    j.field("ndebug", false);
+#endif
+#if MCDS_HEAP_TRACKING
+    j.field("heap_tracking", true);
+#else
+    j.field("heap_tracking", false);
+#endif
+    j.field("clock", "std::chrono::steady_clock");
+    j.field("clock_is_steady", Clock::is_steady);
+    j.field("clock_period_ns", static_cast<double>(Clock::period::num) * 1e9 /
+                                   static_cast<double>(Clock::period::den));
+    j.field("clock_observed_resolution_ns", observedClockResolutionNs());
+    j.endObject();
+}
+
+void writeMemory(Json& j, const char* key) {
+    const bench::ProcessMemory m = bench::processMemory();
+    j.key(key);
+    j.beginObject();
+    j.field("available", m.available);
+    j.field("current_rss_bytes", m.currentRssBytes);
+    j.field("peak_rss_bytes", m.peakRssBytes);
+    j.endObject();
+}
+
+}  // namespace
+
+int main(int argc, char** argv) {
+    Options opt;
+    for (int i = 1; i < argc; ++i) {
+        const std::string arg = argv[i];
+        auto need = [&](const char* name) -> std::string {
+            if (i + 1 >= argc) {
+                std::fprintf(stderr, "error: %s requires a value\n", name);
+                std::exit(2);
+            }
+            return argv[++i];
+        };
+        try {
+            if (arg == "--help" || arg == "-h") { usage(); return 0; }
+            else if (arg == "--input") opt.input = need("--input");
+            else if (arg == "--output") opt.output = need("--output");
+            else if (arg == "--radius") opt.radius = std::stod(need("--radius"));
+            else if (arg == "--algorithms") opt.algorithms = splitCsv(need("--algorithms"));
+            else if (arg == "--repetitions") opt.repetitions = std::stoi(need("--repetitions"));
+            else if (arg == "--warmups") opt.warmups = std::stoi(need("--warmups"));
+            else if (arg == "--instrumentation") {
+                const std::string v = need("--instrumentation");
+                if (v == "none") opt.instrumentation = Instrumentation::None;
+                else if (v == "basic") opt.instrumentation = Instrumentation::Basic;
+                else if (v == "detailed") opt.instrumentation = Instrumentation::Detailed;
+                else { std::fprintf(stderr, "error: bad --instrumentation '%s'\n", v.c_str()); return 2; }
+            } else if (arg == "--validate") {
+                const std::string v = need("--validate");
+                if (v == "all") opt.validateAll = true;
+                else if (v == "first") opt.validateAll = false;
+                else { std::fprintf(stderr, "error: bad --validate '%s'\n", v.c_str()); return 2; }
+            } else if (arg == "--exact-max-n") opt.exactMaxN = static_cast<std::size_t>(std::stoul(need("--exact-max-n")));
+            else if (arg == "--graph-only") opt.graphOnly = true;
+            else if (arg == "--run-disconnected") opt.runDisconnected = true;
+            else if (arg == "--emit-solution") opt.emitSolution = true;
+            else { std::fprintf(stderr, "error: unknown option '%s'\n", arg.c_str()); usage(); return 2; }
+        } catch (const std::exception&) {
+            std::fprintf(stderr, "error: bad value for %s\n", arg.c_str());
+            return 2;
+        }
+    }
+
+    if (opt.input.empty() || opt.output.empty()) { usage(); return 2; }
+    if (!(opt.radius > 0.0)) { std::fprintf(stderr, "error: radius must be positive\n"); return 2; }
+    if (opt.repetitions < 1 || opt.warmups < 0) { std::fprintf(stderr, "error: repetitions >= 1, warmups >= 0\n"); return 2; }
+    if (opt.exactMaxN > kExactHardMaxN) {
+        std::fprintf(stderr, "error: --exact-max-n is capped at %zu (exhaustive search)\n", kExactHardMaxN);
+        return 2;
+    }
+    {
+        std::unordered_set<std::string> seen;
+        for (const std::string& a : opt.algorithms) {
+            if (!makeAlgorithm(a)) { std::fprintf(stderr, "error: unknown algorithm '%s'\n", a.c_str()); return 2; }
+            if (!seen.insert(a).second) { std::fprintf(stderr, "error: algorithm '%s' listed twice\n", a.c_str()); return 2; }
+        }
+    }
+    if (!opt.graphOnly && opt.algorithms.empty()) {
+        std::fprintf(stderr, "error: --algorithms required unless --graph-only\n");
+        return 2;
+    }
+
+    std::ostringstream body;
+    Json j(body);
+
+    try {
+        j.beginObject();
+        j.field("schema", kSchema);
+        writeBuild(j);
+
+        // --- T_dataset ----------------------------------------------------
+        auto t0 = Clock::now();
+        const mcds::PointSet points = mcds::loadPointsCsvFile(opt.input);
+        const double datasetMs = msSince(t0);
+
+        const std::uint64_t fingerprint = bench::pointsFingerprint(points);
+
+        // --- T_spatial_index ----------------------------------------------
+        t0 = Clock::now();
+        mcds::GridSpatialIndex grid(points, opt.radius);
+        const double indexMs = msSince(t0);
+
+        // --- T_graph_stats (analysis only; never given to algorithms) -----
+        grid.resetStats();
+        t0 = Clock::now();
+        const bench::GraphStats gs = bench::computeGraphStats(points, grid, opt.radius);
+        const double graphStatsMs = msSince(t0);
+        grid.resetStats();
+
+        j.key("input");
+        j.beginObject();
+        j.field("path", opt.input);
+        j.field("radius", opt.radius);
+        j.field("n", static_cast<std::uint64_t>(points.size()));
+        j.field("points_fingerprint", bench::toHex64(fingerprint));
+        j.field("identity_ids", points.usesIdentityIds());
+        const mcds::BoundingBox box = points.boundingBox();
+        j.key("bbox");
+        j.beginArray();
+        j.value(box.minX); j.value(box.minY); j.value(box.maxX); j.value(box.maxY);
+        j.endArray();
+        j.field("dataset_bytes", static_cast<std::uint64_t>(points.size() * sizeof(mcds::Point)));
+        j.endObject();
+
+        j.key("index");
+        j.beginObject();
+        j.field("backend", grid.name());
+        j.field("cell_size", grid.cellSize());
+        j.field("cells_x", static_cast<std::int64_t>(grid.cellsX()));
+        j.field("cells_y", static_cast<std::int64_t>(grid.cellsY()));
+        j.field("index_bytes", static_cast<std::uint64_t>(grid.indexBytes()));
+        j.endObject();
+
+        j.key("graph");
+        j.beginObject();
+        j.field("n", static_cast<std::uint64_t>(gs.n));
+        j.field("edges", gs.edges);
+        j.field("min_degree", static_cast<std::uint64_t>(gs.minDegree));
+        j.field("max_degree", static_cast<std::uint64_t>(gs.maxDegree));
+        j.field("mean_degree", gs.meanDegree);
+        j.field("median_degree", gs.medianDegree);
+        j.field("degree_std", gs.degreeStdDev);
+        j.field("graph_density", gs.graphDensity);
+        j.field("isolated_count", static_cast<std::uint64_t>(gs.isolatedCount));
+        j.field("component_count", static_cast<std::uint64_t>(gs.componentCount));
+        j.field("largest_component", static_cast<std::uint64_t>(gs.largestComponent));
+        j.field("connected", gs.connected);
+        j.field("stats_neighbor_queries", gs.neighborQueries);
+        j.field("stats_candidates_examined", gs.candidatesExamined);
+        j.endObject();
+
+        // --- Optional exact OPT (analysis only) ---------------------------
+        double exactMs = 0.0;
+        j.key("exact");
+        j.beginObject();
+        if (opt.exactMaxN == 0) {
+            j.field("status", "disabled");
+        } else if (!gs.connected) {
+            j.field("status", "skipped_disconnected");
+        } else if (points.size() > opt.exactMaxN) {
+            j.field("status", "skipped_n_too_large");
+        } else {
+            t0 = Clock::now();
+            const mcds::ExactSmallResult ex = mcds::exactSmallMCDS(points, opt.radius, opt.exactMaxN);
+            exactMs = msSince(t0);
+            const mcds::ValidationResult ev = mcds::validateCDS(points, grid, ex.selectedIds, opt.radius);
+            j.field("status", ev.valid() ? "computed" : "computed_but_invalid");
+            j.field("opt_size", static_cast<std::uint64_t>(ex.optSize));
+            j.field("valid", ev.valid());
+            j.field("method", "exhaustive_by_increasing_size");
+        }
+        j.endObject();
+
+        j.key("timing_ms");
+        j.beginObject();
+        j.field("dataset", datasetMs);
+        j.field("spatial_index", indexMs);
+        j.field("graph_stats", graphStatsMs);
+        j.field("exact", exactMs);
+        j.endObject();
+
+        j.field("instrumentation", instrumentationName(opt.instrumentation));
+        j.field("repetitions", opt.repetitions);
+        j.field("warmups", opt.warmups);
+        j.key("execution_order");
+        j.beginArray();
+        for (const std::string& a : opt.algorithms) j.value(a);
+        j.endArray();
+
+        writeMemory(j, "process_memory_after_preprocessing");
+
+        const bool skipAlgorithms = opt.graphOnly || (!gs.connected && !opt.runDisconnected);
+        j.field("status", opt.graphOnly ? "graph_only" : (skipAlgorithms ? "input_disconnected" : "ok"));
+
+        // --- Algorithm executions -----------------------------------------
+        bench::InstrumentedSpatialIndex instrumented(grid, opt.instrumentation == Instrumentation::Detailed);
+        mcds::SpatialIndex& algoIndex =
+            opt.instrumentation == Instrumentation::None
+                ? static_cast<mcds::SpatialIndex&>(grid)
+                : static_cast<mcds::SpatialIndex&>(instrumented);
+
+        j.key("runs");
+        j.beginArray();
+        if (!skipAlgorithms) {
+            std::vector<std::unique_ptr<mcds::MCDSAlgorithm>> algos;
+            for (const std::string& a : opt.algorithms) algos.push_back(makeAlgorithm(a));
+
+            std::int64_t sequence = 0;
+            const int totalRounds = opt.warmups + opt.repetitions;
+            for (int round = 0; round < totalRounds; ++round) {
+                const bool warmup = round < opt.warmups;
+                const int rep = warmup ? round : round - opt.warmups;
+                for (std::size_t pos = 0; pos < algos.size(); ++pos) {
+                    mcds::MCDSAlgorithm& algo = *algos[pos];
+
+                    mcds::MCDSResult res;
+                    std::string error;
+                    algoIndex.resetStats();
+#if MCDS_HEAP_TRACKING
+                    const bench::ProcessMemory rssBefore = bench::processMemory();
+                    bench::heapResetWindow();
+                    const std::uint64_t heapBaseline = bench::heapSnapshot().currentBytes;
+#endif
+                    // ======== timed region ========
+                    const auto start = Clock::now();
+                    try {
+                        res = algo.solve(points, algoIndex, opt.radius);
+                    } catch (const std::exception& e) {
+                        error = e.what();
+                    }
+                    const auto stop = Clock::now();
+                    // ======== end timed region ====
+#if MCDS_HEAP_TRACKING
+                    const bench::HeapSnapshot heap = bench::heapSnapshot();
+                    const bench::ProcessMemory rssAfter = bench::processMemory();
+#endif
+                    const mcds::QueryStats qs = algoIndex.stats();
+                    const std::int64_t ns =
+                        std::chrono::duration_cast<std::chrono::nanoseconds>(stop - start).count();
+
+                    j.beginObject();
+                    j.field("sequence", sequence++);
+#if MCDS_HEAP_TRACKING
+                    j.field("phase", "memory_probe");
+#else
+                    j.field("phase", warmup ? "warmup" : "timed");
+#endif
+                    j.field("repetition", rep);
+                    j.field("execution_position", static_cast<std::int64_t>(pos));
+                    j.field("algorithm", algo.name());
+                    j.field("t_algorithm_ns", ns);
+                    j.field("t_algorithm_ms", static_cast<double>(ns) / 1e6);
+                    j.field("neighbor_queries", qs.neighborQueries);
+                    j.field("candidates_examined", qs.candidatesExamined);
+                    j.field("neighbors_returned", qs.neighborsReturned);
+                    // Exact for the grid: the query point is always in the
+                    // scanned block and is the only candidate skipped before
+                    // the distance test.
+                    j.field("distance_computations", qs.candidatesExamined - qs.neighborQueries);
+                    if (opt.instrumentation != Instrumentation::None) {
+                        const bench::ExtendedQueryStats& ex = instrumented.extendedStats();
+                        j.field("cells_examined", ex.cellsExamined);
+                        j.field("max_candidates_per_query", ex.maxCandidatesPerQuery);
+                        j.field("max_neighbors_per_query", ex.maxNeighborsPerQuery);
+                        if (opt.instrumentation == Instrumentation::Detailed) {
+                            j.field("query_time_ns", ex.queryTimeNs);
+                        }
+                    }
+#if MCDS_HEAP_TRACKING
+                    j.field("heap_peak_additional_bytes", heap.peakBytes - heapBaseline);
+                    j.field("heap_allocation_count", heap.allocationCount);
+                    j.field("heap_allocated_bytes", heap.allocatedBytes);
+                    j.field("rss_before_algorithm_bytes", rssBefore.currentRssBytes);
+                    j.field("process_peak_rss_bytes", rssAfter.peakRssBytes);
+#endif
+
+                    if (!error.empty()) {
+                        j.field("status", "algorithm_error");
+                        j.field("error", error);
+                        j.endObject();
+                        continue;
+                    }
+
+                    std::unordered_set<int> uniq(res.selectedIds.begin(), res.selectedIds.end());
+                    std::size_t cores = 0;
+                    std::size_t connectors = 0;
+                    for (const auto& role : res.roles) {
+                        if (role.second == "core") ++cores;
+                        else if (role.second == "connector") ++connectors;
+                    }
+                    j.field("cds_size", static_cast<std::uint64_t>(res.selectedIds.size()));
+                    j.field("duplicate_ids", static_cast<std::uint64_t>(res.selectedIds.size() - uniq.size()));
+                    j.field("cds_hash", bench::toHex64(bench::idSetFingerprint(res.selectedIds)));
+                    j.field("roles_reported", !res.roles.empty());
+                    j.field("core_count", static_cast<std::uint64_t>(cores));
+                    j.field("connector_count", static_cast<std::uint64_t>(connectors));
+
+                    const bool doValidate = opt.validateAll || rep == 0;
+                    if (doValidate) {
+                        // Validation uses the raw grid so its queries never
+                        // touch the algorithm's counters.
+                        const auto vt0 = Clock::now();
+                        bool threw = false;
+                        mcds::ValidationResult v;
+                        std::string verr;
+                        try {
+                            v = mcds::validateCDS(points, grid, res.selectedIds, opt.radius);
+                        } catch (const std::exception& e) {
+                            threw = true;
+                            verr = e.what();
+                        }
+                        j.field("t_validation_ms", msSince(vt0));
+                        j.field("validated", true);
+                        std::string reason;
+                        if (threw) {
+                            reason = std::string("validator_exception:") + verr;
+                        } else {
+                            if (res.selectedIds.empty() && !points.empty()) reason = "empty_selection";
+                            else {
+                                if (!v.dominating) reason = "not_dominating";
+                                if (!v.connected) reason += reason.empty() ? "not_connected" : ";not_connected";
+                            }
+                        }
+                        j.field("domination_valid", !threw && v.dominating);
+                        j.field("connectivity_valid", !threw && v.connected);
+                        j.field("valid_solution", !threw && v.valid());
+                        j.field("undominated_count",
+                                static_cast<std::uint64_t>(threw ? points.size() : points.size() - v.dominatedCount));
+                        j.field("failure_reason", reason);
+                        j.field("status", (!threw && v.valid()) ? "ok" : "invalid_solution");
+                    } else {
+                        j.field("validated", false);
+                        j.field("status", "ok_unvalidated");
+                    }
+                    if (opt.emitSolution && !warmup && rep == 0) {
+                        std::vector<int> sorted = res.selectedIds;
+                        std::sort(sorted.begin(), sorted.end());
+                        j.key("selected_ids");
+                        j.beginArray();
+                        for (const int id : sorted) j.value(id);
+                        j.endArray();
+                    }
+                    j.endObject();
+                }
+            }
+        }
+        j.endArray();
+
+        writeMemory(j, "process_memory_final");
+        j.endObject();
+    } catch (const std::exception& e) {
+        std::fprintf(stderr, "error: %s\n", e.what());
+        return 1;
+    }
+
+    std::ofstream out(opt.output, std::ios::binary);
+    if (!out) {
+        std::fprintf(stderr, "error: cannot write '%s'\n", opt.output.c_str());
+        return 1;
+    }
+    out << body.str() << '\n';
+    return out ? 0 : 1;
+}

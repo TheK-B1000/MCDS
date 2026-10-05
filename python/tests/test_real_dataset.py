@@ -16,7 +16,8 @@ for path in (_REPO_ROOT, _PYTHON_DIR):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-from experiment_runner import DatasetSpec, expand_dataset_specs, load_config  # noqa: E402
+from study import config as study_config  # noqa: E402
+from study.datasets import plan as plan_datasets  # noqa: E402
 from generators import generate, read_csv, write_csv  # noqa: E402
 from real_dataset import (  # noqa: E402
     ImportError_,
@@ -253,33 +254,34 @@ class MalformedInputTests(unittest.TestCase):
 
 class ExperimentConfigTests(unittest.TestCase):
     def test_external_datasets_config_parsing(self) -> None:
-        config = {
-            "algorithms": ["marathe", "wan"],
-            "datasets": [
-                {"name": "a", "path": "datasets/real/a.csv", "radius": 50.0},
-                {"name": "b", "path": "datasets/real/b.csv", "radius": 100.0, "radius_units": "meters"},
-            ],
-            "require_connected": True,
-        }
-        specs = expand_dataset_specs(config)
-        self.assertEqual(len(specs), 2)
-        self.assertTrue(all(s.is_external for s in specs))
-        self.assertEqual(specs[0].radius, 50.0)
+        config = study_config.resolve({
+            "study_id": "ext", "study_seed": 1, "algorithms": ["marathe", "wan"],
+            "external": {"datasets": [
+                {"name": "a", "path": "datasets/real/a.csv", "radii": [50.0], "units": "meters"},
+                {"name": "b", "path": "datasets/real/b.csv", "radii": [100.0, 200.0], "units": "meters"},
+            ]},
+        })
+        specs = plan_datasets(config)
+        # One graph per (dataset, radius): the radius sweep is explicit.
+        self.assertEqual(len(specs), 3)
+        self.assertTrue(all(s.source_type == "real" for s in specs))
+        self.assertEqual([s.radius for s in specs], [50.0, 100.0, 200.0])
         self.assertEqual(specs[1].radius_units, "meters")
-        # Same path ⇒ same SHA key material across algorithms (key uses path+radius).
         self.assertEqual(specs[0].external_path, "datasets/real/a.csv")
+        # Real data is never resampled to force connectivity.
+        self.assertEqual(config["connectivity_rule"]["mode"], "accept_all")
 
     def test_synthetic_configs_still_expand(self) -> None:
-        config = load_config(_REPO_ROOT / "experiments" / "smoke.json")
-        specs = expand_dataset_specs(config)
+        config = study_config.load(_REPO_ROOT / "experiments" / "smoke.json")
+        specs = plan_datasets(config)
         self.assertGreater(len(specs), 0)
-        self.assertFalse(any(s.is_external for s in specs))
+        self.assertFalse(any(s.source_type == "real" for s in specs))
 
     def test_real_world_scaling_json_loads(self) -> None:
-        config = load_config(_REPO_ROOT / "experiments" / "real_world_scaling.json")
-        specs = expand_dataset_specs(config)
-        self.assertEqual(len(specs), 4)
-        self.assertTrue(specs[0].is_external)
+        config = study_config.load(_REPO_ROOT / "experiments" / "real_world_scaling.json")
+        specs = plan_datasets(config)
+        self.assertEqual(len(specs), 3)
+        self.assertEqual(specs[0].source_type, "real")
 
 
 class ClusteredRegressionTests(unittest.TestCase):
@@ -298,8 +300,7 @@ class MillionPointOptionalTests(unittest.TestCase):
     def test_million_point_import_and_index_smoke(self) -> None:
         """Infrastructure smoke: ingest + index 1e6 points (no MCDS algorithms)."""
         import time
-        from gui_support import find_mcds_executable, build_solver_command, run_solver
-        from experiment_runner import measure_peak_memory_mb
+        from study.bench import find_binary, run_bench
 
         def _peak_working_set_mb() -> float | None:
             if os.name != "nt":
@@ -363,23 +364,26 @@ class MillionPointOptionalTests(unittest.TestCase):
             validate_canonical_csv(out)
 
             try:
-                exe = find_mcds_executable(_REPO_ROOT)
+                exe = find_binary(_REPO_ROOT, "mcds_bench")
             except FileNotFoundError:
-                self.skipTest("mcds executable not built")
+                self.skipTest("mcds_bench not built")
 
-            conn = tmp_path / "conn.json"
-            inv = build_solver_command(exe, out, conn, check_connectivity_only=True, radius=1.0)
-            completed, solver_peak_mb = measure_peak_memory_mb(inv.command, timeout_s=600.0)
-            self.assertEqual(completed.returncode, 0, msg=completed.stderr)
-            payload = json.loads(conn.read_text(encoding="utf-8"))
-
-            # Connectivity-only path exercises load + index build + radius queries.
-            neighbor_ok = (
-                int(payload.get("connectivity_neighbor_queries", 0)) > 0
-                or int(payload.get("component_count", -1)) >= 0
-            )
-            self.assertTrue(neighbor_ok)
-            self.assertIn("component_count", payload)
+            probe = run_bench(exe, out, 1.0, graph_only=True, timeout_s=600.0)
+            self.assertTrue(probe.ok, msg=probe.error)
+            data = probe.data
+            graph = data["graph"]
+            # Graph-only path exercises load + index build + radius queries.
+            self.assertGreater(int(graph["stats_neighbor_queries"]), 0)
+            payload = {
+                "load_ms": data["timing_ms"]["dataset"],
+                "index_build_ms": data["timing_ms"]["spatial_index"],
+                "connectivity_ms": data["timing_ms"]["graph_stats"],
+                "connectivity_neighbor_queries": graph["stats_neighbor_queries"],
+                "component_count": graph["component_count"],
+                "largest_component": graph["largest_component"],
+            }
+            peak = data["process_memory_final"]["peak_rss_bytes"]
+            solver_peak_mb = peak / (1024.0 * 1024.0) if data["process_memory_final"]["available"] else None
 
             report = {
                 "point_count": result.point_count,

@@ -1,5 +1,9 @@
 # Li–Thai–Wang–Yi–Wan–Du S-MIS Algorithm
 
+> **Historical design note (pre-audit).** Written before the primary-source audit and kept for
+> history. Where it differs from the code or the audit, the authoritative page is
+> [algorithms/li_smis.md](algorithms/li_smis.md); source status is in [source_audit.md](source_audit.md).
+
 ## Bibliographic source
 
 Yingshu Li, My T. Thai, Feng Wang, Chih-Wei Yi, Peng-Jun Wan, Ding-Zhu Du.  
@@ -152,7 +156,7 @@ paper theoretical guarantee:  (4.8 + ln 5) opt + 1.2
 our measured empirical CDS/OPT:  from ExactSmall experiments only
 ```
 
-**Known later critique (limitation, not our code bug):** some subsequent papers argue the published `4.8 + ln 5` analysis should be corrected (e.g. toward `5.8 + ln 5`). We still report the **original paper’s stated** guarantee in tables, and note the debate under Known limitations.
+**Known later critique:** UNVERIFIED — SOURCE REQUIRED. This note originally claimed later papers proposed a corrected bound (e.g. `5.8 + ln 5`) but gave no citation; do not repeat it until a source is cited.
 
 ---
 

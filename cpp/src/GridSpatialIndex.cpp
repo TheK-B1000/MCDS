@@ -146,6 +146,18 @@ void GridSpatialIndex::radiusQueryImpl(int pointId, double radius, std::vector<i
     stats_.neighborsReturned += out.size();
 }
 
+std::size_t GridSpatialIndex::cellsScannedFor(int pointId, double radius) const {
+    const Point& p = (*points_)[points_->indexOf(pointId)];
+    const int k = ringsFor(radius);
+    const int gx = cellX(p.x);
+    const int gy = cellY(p.y);
+    const int x0 = (gx - k > 0) ? gx - k : 0;
+    const int y0 = (gy - k > 0) ? gy - k : 0;
+    const int x1 = (gx + k < nx_ - 1) ? gx + k : nx_ - 1;
+    const int y1 = (gy + k < ny_ - 1) ? gy + k : ny_ - 1;
+    return static_cast<std::size_t>(x1 - x0 + 1) * static_cast<std::size_t>(y1 - y0 + 1);
+}
+
 std::size_t GridSpatialIndex::indexBytes() const {
     return cellStart_.size() * sizeof(std::uint32_t) + cellPoints_.size() * sizeof(std::uint32_t);
 }

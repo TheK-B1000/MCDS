@@ -1,23 +1,26 @@
 {
-  "batch_id": "final",
-  "comment": "Frozen after pilot + connectivity calibration. Densities 5/8/12: density 3.0 dropped because clustered/corridor at n=2000 never yield connected UDGs within 80 attempts. Do not edit during final runs without a new tag.",
+  "study_id": "final",
+  "study_seed": 20261101,
+  "description": "v1 final study, pre-registered in docs/final_experiment_protocol.md and locked at tag v1.0-final-experiment. Run only from that clean commit after the machine-preparation steps. Any methodology change requires a new revision and a new study_id.",
+  "final": true,
   "algorithms": ["marathe", "wan", "funke", "li"],
-  "distributions": ["uniform", "clustered", "perturbed_grid", "corridor", "cluster_bridge"],
-  "sizes": [500, 1000, 2000, 5000, 10000],
-  "seeds": [1, 2, 3, 4, 5],
-  "densities": [5.0, 8.0, 12.0],
-  "radius": 1.0,
-  "require_connected": true,
-  "max_connectivity_attempts": 80,
-  "timing_repetitions": 5,
-  "warmup_runs": 1,
-  "distribution_parameters": {
-    "clustered": {"clusters": 4, "spread": 0.8},
-    "corridor": {"corridor_width": 3.0},
-    "cluster_bridge": {"clusters": 3, "spread": 0.45, "bridge_fraction": 0.2, "bridge_width": 0.6},
-    "perturbed_grid": {"jitter": 0.15}
+  "synthetic": {
+    "geometries": ["uniform", "clustered", "perturbed_grid", "corridor", "cluster_bridge"],
+    "sizes": [500, 1000, 2000, 5000, 10000],
+    "densities": [5.0, 8.0, 12.0],
+    "radius": 1.0,
+    "replicates": 20,
+    "geometry_parameters": {
+      "clustered": {"clusters": 4, "spread": 0.8},
+      "corridor": {"corridor_width": 3.0},
+      "cluster_bridge": {"clusters": 3, "spread": 0.45, "bridge_fraction": 0.2, "bridge_width": 0.6},
+      "perturbed_grid": {"jitter": 0.15}
+    }
   },
-  "study_dir": "results/studies/final",
-  "max_runtime_seconds": 600,
-  "max_peak_memory_mb": 8192
+  "connectivity_rule": {"mode": "resample_until_connected", "max_attempts": 80},
+  "timing": {"repetitions": 5, "warmups": 1, "instrumentation": "none", "process_mode": "shared",
+             "validate": "all", "timeout_seconds": 3600},
+  "memory_probe": true,
+  "counter_pass": "basic",
+  "exact": {"max_n": 0}
 }

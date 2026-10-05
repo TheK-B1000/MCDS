@@ -75,3 +75,62 @@ mcds_add_test(test_funke)
 mcds_add_test(test_li_smis)
 mcds_add_test(test_wan_level_mis)
 mcds_add_test(test_exact_small)
+
+# ---------------------------------------------------------------------------
+# Experiment measurement harness used by python/run_study.py. The `mcds` CLI
+# above remains the interactive / GUI driver.
+#
+#   mcds_bench      timing / work counters (stock allocator)
+#   mcds_bench_mem  memory probes (heap-tracking operator new; never timed)
+# ---------------------------------------------------------------------------
+if(MSVC)
+    set(MCDS_BI_WARNING_FLAGS "/W4 /permissive-")
+else()
+    set(MCDS_BI_WARNING_FLAGS "-Wall -Wextra -Wpedantic")
+endif()
+foreach(cfg "" _RELEASE _DEBUG _RELWITHDEBINFO _MINSIZEREL)
+    string(STRIP "${CMAKE_CXX_FLAGS${cfg}}" _flags)
+    string(REPLACE "\"" "\\\"" _flags "${_flags}")
+    set(MCDS_BI_CXX_FLAGS${cfg} "${_flags}")
+endforeach()
+configure_file(include/bench/BuildInfo.hpp.in ${CMAKE_CURRENT_BINARY_DIR}/generated/bench/BuildInfo.hpp @ONLY)
+
+add_library(mcds_bench_support STATIC src/bench/BenchSupport.cpp)
+target_link_libraries(mcds_bench_support PUBLIC mcds_core)
+target_include_directories(mcds_bench_support PUBLIC include ${CMAKE_CURRENT_BINARY_DIR}/generated)
+if(WIN32)
+    target_link_libraries(mcds_bench_support PUBLIC psapi)
+endif()
+
+function(mcds_add_bench target heap_tracking)
+    if(heap_tracking)
+        add_executable(${target} src/bench_main.cpp src/bench/HeapTracker.cpp)
+    else()
+        add_executable(${target} src/bench_main.cpp)
+    endif()
+    target_link_libraries(${target} PRIVATE mcds_bench_support)
+    target_compile_definitions(${target} PRIVATE
+        MCDS_HEAP_TRACKING=${heap_tracking}
+        MCDS_BUILD_CONFIG="$<CONFIG>")
+endfunction()
+
+mcds_add_bench(mcds_bench 0)
+mcds_add_bench(mcds_bench_mem 1)
+
+foreach(target mcds_bench_support mcds_bench mcds_bench_mem)
+    if(MSVC)
+        target_compile_options(${target} PRIVATE /W4 /permissive-)
+    else()
+        target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+endforeach()
+
+add_executable(test_bench_support tests/test_bench_support.cpp)
+target_link_libraries(test_bench_support PRIVATE mcds_bench_support)
+target_include_directories(test_bench_support PRIVATE tests)
+if(MSVC)
+    target_compile_options(test_bench_support PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(test_bench_support PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+add_test(NAME test_bench_support COMMAND test_bench_support)

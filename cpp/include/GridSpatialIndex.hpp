@@ -47,6 +47,11 @@ public:
     /// index memory grows with n and not with the edge count.
     std::size_t indexBytes() const;
 
+    /// Number of grid cells a `radiusQuery(pointId, radius)` scans. Pure
+    /// introspection for experiment instrumentation: it reuses the query's
+    /// own cell arithmetic but never touches the query path or the counters.
+    std::size_t cellsScannedFor(int pointId, double radius) const;
+
 protected:
     void radiusQueryImpl(int pointId, double radius, std::vector<int>& out) const override;
 

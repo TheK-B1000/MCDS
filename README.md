@@ -138,9 +138,13 @@ python/
   import_dataset.py   real-world CSV / GeoJSON → canonical PointSet CSV
   real_dataset.py     projection, sampling, metadata, LCC / tiles helpers
   prepare_real_dataset.py  explicit LCC, nested prefixes, rectangular tiles
+  run_study.py        the experiment runner (package study/)
+  study/              config, seeds, schedule, datasets, runner, fairness,
+                      analysis, figures, manifest
 datasets/             generated / imported CSVs (gitignored; demo + real/ kept)
 results/              run outputs (gitignored)
-docs/real_world_data.md
+experiments/          study configurations
+docs/                 methodology, protocol, audits, algorithms/, real_world_data.md
 ```
 
 `BruteForce.hpp` deliberately lives under `cpp/tests/`, which is on the include
@@ -157,8 +161,12 @@ cmake -S cpp -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --parallel
 ```
 
-Verified with GCC 15.2 and MSVC 19.44, both warning-free at `-Wall -Wextra
--Wpedantic` / `/W4`.
+Verified with GCC 15.2 and MSVC 19.44 at `-Wall -Wextra -Wpedantic` / `/W4`.
+(MSVC currently reports C4244 conversion warnings from standard-library
+instantiations in `mcds_core`.)
+
+Targets: `mcds` (interactive CLI used by the GUI), `mcds_bench` (experiment
+measurement driver), `mcds_bench_mem` (memory probes), and the test suites.
 
 On Windows without CMake on `PATH`, the copy bundled with Visual Studio Build
 Tools works:
@@ -271,11 +279,23 @@ python python/gui.py
 
 ### Experiments
 
+One runner, `python/run_study.py`, drives every study (synthetic and real).
+See [docs/experimental_methodology.md](docs/experimental_methodology.md).
+
 ```bash
-python python/experiment_runner.py --config experiments/smoke.json
-python python/experiment_runner.py --config experiments/smoke.json --summary
-python python/plots.py --experiments-csv results/experiments.csv --save-dir results/plots
+py -3 python/run_study.py plan      --config experiments/pilot.json   # design only, runs nothing
+py -3 python/run_study.py reproduce --config experiments/smoke.json   # run + analyze + figures + manifest
 ```
+
+`reproduce` is resumable (re-run the same command after Ctrl+C) and exits
+non-zero if the automatic fairness check fails. Outputs land in
+`results/studies/<study_id>/`: `raw_runs.csv` (one row per algorithm
+execution), `datasets.csv`, `generation_attempts.csv`, `failures.csv`,
+`summary.csv`, `paired.csv`, `validity.csv`, `figures/`,
+`environment.json`, `methodology_manifest.json`.
+
+Configs in `experiments/`: `smoke`, `pilot`, `exact_small` (|D|/OPT for
+n ≤ 16), `real_world_scaling` (template), `final` (draft; see the protocol).
 
 ### Real-world / external datasets
 
@@ -283,9 +303,6 @@ Synthetic studies and imported real datasets share the same canonical CSV and
 solver path. See [docs/real_world_data.md](docs/real_world_data.md).
 
 ```bash
-# Synthetic clustered density study (unchanged)
-py -3 python/run_study.py --config experiments/density.json
-
 # Import planar CSV
 py -3 python/import_dataset.py \
     --type csv \
@@ -314,23 +331,26 @@ py -3 python/import_dataset.py \
     --output datasets/real/buildings_1m.csv
 
 # Preview a real-data study (replace placeholder paths first)
-py -3 python/run_study.py --config experiments/real_world_scaling.json --dry-run
+py -3 python/run_study.py plan --config experiments/real_world_scaling.json
 ```
 
-Datasets are generated **once** per `(distribution, n, seed, params)` key and
-reused across algorithms. With `require_connected`, the runner retries
-`effective_seed = base_seed + attempt` up to a configured limit and records
-failures instead of dropping them.
+Each graph is generated or loaded **once**; all four algorithms run on the same
+in-memory point set inside one `mcds_bench` process, and the solver's points
+fingerprint is checked against Python's. Graph seeds are SHA-256-derived from
+every factor, so replicates never share a dataset; every connectivity
+resampling attempt is logged. Real datasets declare their own radius (or radius
+sweep) and are never resampled or silently repaired.
 
-Peak memory is measured on the **C++ child process** (Windows: peak working
-set via `GetProcessMemoryInfo`; POSIX: `RUSAGE_CHILDREN` max RSS).
+Memory: per-algorithm heap peak from a separate heap-tracking probe binary
+(`mcds_bench_mem`), never mixed with timing runs.
 
 ---
 
 ## Running tests
 
 ```bash
-ctest --test-dir cpp/build --output-on-failure
+ctest --test-dir cpp/build --output-on-failure            # single-config generators
+ctest --test-dir cpp/build-msvc -C Release                # Visual Studio generator
 ```
 
 ### Python environment (required for plots / GUI / visualization / studies)
@@ -346,22 +366,29 @@ py -3 -m unittest discover -s python/tests -v
 
 `python/check_env.py` verifies `matplotlib` and `tqdm`.
 
-### Experiment laboratory
-
-```bash
-# Preview size (no execution)
-py -3 python/run_study.py --config experiments/pilot.json --dry-run
-
-# Full study with progress bar, resume, plots, summary
-py -3 python/run_study.py --config experiments/smoke.json
-
-# Resume after Ctrl+C: run the same command again
-```
+### Study workflow
 
 Permanent demo dataset: `datasets/demo/cluster_bridge_300.csv`.
 
-Recommended sequence: smoke → correctness → pilot → density → geometry →
-scaling → final (do not launch final until pilot looks sane).
+Recommended sequence: smoke → pilot → exact_small → (real data) → final.
+Do not launch `final` until the protocol in
+[docs/final_experiment_protocol.md](docs/final_experiment_protocol.md) is
+approved; `final: true` refuses a dirty git tree or a non-Release build.
+
+---
+
+## Methodology status
+
+v1 methodology is under development; final data collection has not started.
+It will be locked with a git tag (e.g. `v1.0-final-experiment`) and the
+generated `methodology_manifest.json`. The older tag `v1.0-experiments` is a
+snapshot of the pre-upgrade pipeline only.
+
+- Paper verification: [docs/source_audit.md](docs/source_audit.md) and
+  [docs/algorithms/](docs/algorithms/)
+- Methodology: [docs/experimental_methodology.md](docs/experimental_methodology.md)
+- Audit trail: [docs/methodology_audit.md](docs/methodology_audit.md)
+- Pre-registration draft: [docs/final_experiment_protocol.md](docs/final_experiment_protocol.md)
 
 ---
 
@@ -409,10 +436,14 @@ Done and tested through visualization, GUI, and the smoke experiment pipeline:
 - [x] Unified CLI with staged timing and JSON results
 - [x] Python visualization (CDS highlight, optional CDS edges, PNG export)
 - [x] Tkinter GUI orchestration layer
-- [x] Experiment runner with connected-input retries, resume, peak memory
-- [x] Basic experimental plots across distributions
+- [x] Experiment runner: shared in-memory graph per process, balanced
+      execution order, raw per-repetition rows, fairness checker, resume
+- [x] Graph statistics, spatial-work counters, per-algorithm heap probes
+- [x] Statistical summaries (bootstrap / Wilson CIs, paired comparisons) and figures
+- [x] Primary-paper audits for all four algorithms; Wan §VI.A pruning implemented
 - [x] Real-world dataset import (CSV / GeoJSON / lat-lon projection) and external study mode
 
 Remaining:
 
-- [ ] Collect experimental data (pilot → density → geometry → scaling → final; optional real-world scaling after import)
+- [ ] Resolve open protocol decisions; lock the v1 methodology (tag + manifest)
+- [ ] Collect final data (pilot → exact_small → final; optional real-world study)

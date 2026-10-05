@@ -97,6 +97,8 @@ The centralized loop says “there exists”: it does not rank grey nodes that a
 
 **Algorithm A, as coded: the procedure matches §3**, including ignored blue–blue edges and the `5→2` thresholds.
 
-**THEORETICAL GUARANTEE NOT CLAIMED FOR IMPLEMENTATION** as an unconditional theorem. It applies only if our MIS meets Lemma 2 on every connected UDG we run. We have differential and empirical support for that, not a formal proof. `LiSMIS.hpp` states the bound without that condition; that comment is stronger than this audit.
+**THEORETICAL GUARANTEE NOT CLAIMED FOR IMPLEMENTATION** as an unconditional theorem. It applies only if our MIS meets Lemma 2 on every connected UDG we run. We have differential and empirical support for that, not a formal proof. `LiSMIS.hpp` now states the bound as conditional and names the implementation an adaptation: **“S-MIS connector phase with centralized Wan-level MIS.”**
+
+**Project argument (not in the paper; offered for review, not yet adopted as a claim): our MIS satisfies Lemma 2 on every connected graph.** Let `v` be a non-leader MIS vertex and `p` its BFS parent. `p` is one level above `v`, so `rank(p) < rank(v)` and the greedy scan processes `p` first. `p` is adjacent to `v`, which is selected, so `p` is not in the MIS; hence when `p` was processed some already-selected neighbour `u` blocked it, with `rank(u) < rank(p) < rank(v)`. So `v` has a 2-hop path `v–p–u` to an MIS vertex of strictly lower rank. By induction on rank, every MIS vertex reaches the leader in the graph whose edges join MIS vertices at distance 2. That graph is therefore connected, so any split of the MIS into two non-empty parts has a cross pair at distance ≤ 2, and since the MIS is independent that distance is exactly 2 — Lemma 2. If this argument is accepted, Theorem 1 applies to our implementation conditional only on Lemma 1, which the paper states for every MIS.
 
 `IMPLEMENTATION VERIFIED: PARTIAL`

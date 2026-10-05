@@ -127,6 +127,46 @@ MCDSResult WanAlgorithm::solve(const PointSet& points, const SpatialIndex& index
         }
     }
 
+    // Black -> gray pruning (INFOCOM 2002 §VI.A, fourth rule; Fig. 5):
+    //   "If a black node has rank higher than all its neighbors and all its
+    //    neighbors are black, it remarks itself gray."
+    //
+    // Evaluated on the black set produced above. This equals any asynchronous
+    // order of the rule: an eligible node outranks every neighbour, so no
+    // neighbour of it can itself be eligible, and pruning one node never
+    // changes another node's eligibility.
+    //
+    // Interpretation of the vacuous case: a node with no neighbours (n == 1)
+    // is never pruned, so the CDS stays non-empty (the paper's Theorem 8
+    // promises a nontrivial CDS).
+    std::vector<char> pruned(points.size(), 0);
+    for (std::size_t v = 0; v < points.size(); ++v) {
+        if (!selected[v]) {
+            continue;
+        }
+        index.radiusQuery(points.idAt(v), radius, neighbors);
+        if (neighbors.empty()) {
+            continue;
+        }
+        bool eligible = true;
+        for (const int nid : neighbors) {
+            const std::size_t u = points.indexOf(nid);
+            if (!selected[u] ||
+                !rankLess(tree.level[u], points.idAt(u), tree.level[v], points.idAt(v))) {
+                eligible = false;
+                break;
+            }
+        }
+        if (eligible) {
+            pruned[v] = 1;
+        }
+    }
+    for (std::size_t v = 0; v < points.size(); ++v) {
+        if (pruned[v]) {
+            selected[v] = 0;
+        }
+    }
+
     MCDSResult result;
     result.selectedIds.reserve(points.size());
     result.roles.reserve(points.size());

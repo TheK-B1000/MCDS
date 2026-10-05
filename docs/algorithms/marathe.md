@@ -87,7 +87,7 @@ Theorem 4.8 (from `K_{1,6}`-freeness, Lemma 3.2), and `|NS| ≤ |IS|`.
 ## Unresolved ambiguities
 
 - The preprint and the *Networks* article were not compared page-for-page. Numbers cited here are the preprint’s.
-- The header comment in `Marathe.hpp` says the algorithm does not check connectivity. The implementation does throw on a disconnected UDG. The comment is stale; the code was not changed in this audit.
+- Resolved: the `Marathe.hpp` header now states that `solve` throws on a disconnected UDG (comment-only change).
 
 ## Theoretical guarantee
 

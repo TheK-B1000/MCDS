@@ -125,45 +125,52 @@ py -3 python/prepare_real_dataset.py \
     --output-dir datasets/real/tiles
 ```
 
-Disconnected inputs in a study with `require_connected: true` are recorded as
-`status = disconnected_input` with component diagnostics. The original CSV is
-not modified.
+Disconnected real inputs are recorded with `status = input_disconnected` and
+component diagnostics in `datasets.csv` / `failures.csv`; algorithms are not
+run on them. Real data is never resampled, and the original CSV is not
+modified. If a largest-connected-component rule is wanted, apply
+`prepare_real_dataset.py --largest-connected-component` explicitly and declare
+it in the protocol.
 
 ---
 
 ## Experiment configs
 
-Synthetic mode (unchanged):
+Both modes use the one runner, `python/run_study.py`
+(see [experimental_methodology.md](experimental_methodology.md)).
+
+Synthetic mode:
 
 ```json
 {
-  "distributions": ["clustered"],
-  "sizes": [1000],
-  "seeds": [1],
-  "densities": [8.0],
-  "radius": 1.0
+  "study_id": "clustered_demo",
+  "study_seed": 1,
+  "synthetic": {"geometries": ["clustered"], "sizes": [1000], "densities": [8.0],
+                "radius": 1.0, "replicates": 8}
 }
 ```
 
-External / real mode — when `datasets` is present, **no** synthetic
-generation occurs:
+Real-data mode — `external` replaces `synthetic`; **no** synthetic generation
+occurs. Every dataset must declare its own `radii` (a list = radius sweep) and
+`units`:
 
 ```json
 {
+  "study_id": "florida_buildings",
+  "study_seed": 1,
   "algorithms": ["marathe", "wan", "funke", "li"],
-  "datasets": [
-    {
-      "name": "florida_buildings_100k",
-      "path": "datasets/real/florida_buildings_100k.csv",
-      "radius": 100.0,
-      "radius_units": "meters"
-    }
-  ],
-  "require_connected": true
+  "external": {"datasets": [
+    {"name": "florida_buildings_100k", "path": "datasets/real/florida_buildings_100k.csv",
+     "radii": [50.0, 100.0, 200.0], "units": "meters",
+     "source_path": "data/raw/florida_buildings.geojson"}
+  ]}
 }
 ```
 
-All algorithms on one entry share the same `dataset_sha256`.
+Each (dataset, radius) is one graph; all algorithms run on it in one process
+and share its `dataset_sha256` and points fingerprint. The import sidecar's
+projection metadata and the raw source's `input_sha256` are copied into
+`datasets.csv`.
 
 Do **not** interpret a real radius in meters as comparable to synthetic
 `radius = 1.0`.
@@ -171,7 +178,7 @@ Do **not** interpret a real radius in meters as comparable to synthetic
 Template study (paths are placeholders; do not launch until CSVs exist):
 
 ```bash
-py -3 python/run_study.py --config experiments/real_world_scaling.json --dry-run
+py -3 python/run_study.py plan --config experiments/real_world_scaling.json
 ```
 
 ---

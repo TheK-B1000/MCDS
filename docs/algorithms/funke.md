@@ -17,8 +17,8 @@ Improved Distributed Algorithm for Minimum CDS in Unit Disk Graphs.”
 The local file is the **4-page** version (Figure 1, Theorem 2.1, references
 including Wan INFOCOM 2002 as [8] and Marathe *Networks* 1995 as [7]). It is
 the conference text, not the 10-page *ACM TOSN* 2(3):444–453, 2006 article.
-`Funke.hpp` still names TOSN 2006 as well as WiMob 2005. **TOSN was not in
-the local paper set and was not checked.** This audit verifies the code
+`Funke.hpp` now names this 4-page paper as the implementation source. **TOSN was not in
+the local paper set and was not checked; it is not cited as the implementation source.** This audit verifies the code
 against the 4-page PDF only.
 
 ## Model
@@ -28,10 +28,13 @@ adjacent when their distance is at most 2. The authors state that any other
 constant unit, including range 1, is the same after scaling. Our `R = 1` is
 that normalization, not an algorithm discrepancy.
 
-The algorithm assumes a connected unit-disk graph (a CDS of `G`). Our `solve`
-calls `isConnected` and throws otherwise. That extra traversal is charged to
-Funke’s algorithm-stage query counters; the other three algorithms discover
-disconnection inside a BFS they already need.
+The algorithm assumes a connected unit-disk graph (a CDS of `G`). Connectivity
+is verified once, untimed, for all four algorithms by the runner / CLI. Since
+2026-10-05 `solve` no longer runs its own `isConnected` BFS (that traversal
+had been charged to Funke's algorithm-stage counters only). A disconnected
+input is still rejected: the red frontier dies out while white vertices remain,
+and `solve` throws `std::invalid_argument`. Selected sets are unchanged on
+connected inputs; Funke's algorithm-stage queries drop by exactly `n`.
 
 ## Paper algorithm (Figure 1)
 

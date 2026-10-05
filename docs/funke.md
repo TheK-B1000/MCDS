@@ -1,5 +1,9 @@
 # Funke–Kesselman–Meyer–Segal CDS Algorithm
 
+> **Historical design note (pre-audit).** Written before the primary-source audit and kept for
+> history. Where it differs from the code or the audit, the authoritative page is
+> [algorithms/funke.md](algorithms/funke.md); source status is in [source_audit.md](source_audit.md).
+
 ## Bibliographic source
 
 Stefan Funke, Alexander Kesselman, Ulrich Meyer, Michael Segal.  

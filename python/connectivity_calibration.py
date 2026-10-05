@@ -27,9 +27,9 @@ for path in (_REPO_ROOT, _PYTHON_DIR):
     if str(path) not in sys.path:
         sys.path.insert(0, str(path))
 
-from experiment_runner import check_connected  # noqa: E402
+from study.bench import find_binary, run_bench  # noqa: E402
 from generators import generate, write_csv  # noqa: E402
-from gui_support import find_mcds_executable, find_repo_root  # noqa: E402
+from gui_support import find_repo_root  # noqa: E402
 
 DEFAULT_PARAMS = {
     "clustered": {"clusters": 4, "spread": 0.8},
@@ -60,7 +60,7 @@ def main() -> int:
     n = int(args.n)
 
     repo = find_repo_root()
-    exe = find_mcds_executable(repo)
+    exe = find_binary(repo, "mcds_bench")
     out_dir = (repo / args.out_dir).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
     csv_path = out_dir / "connectivity_rates.csv"
@@ -71,7 +71,6 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory(prefix="mcds_conn_cal_") as tmp:
         tmp_dir = Path(tmp)
-        conn_json = tmp_dir / "conn.json"
         total = len(distributions) * len(densities) * len(seeds)
         done = 0
         for dist in distributions:
@@ -82,8 +81,11 @@ def main() -> int:
                     gen = generate(dist, n, seed, density=density, **extra)
                     points_path = tmp_dir / f"{dist}_d{density}_s{seed}.csv"
                     write_csv(str(points_path), gen.points)
-                    connected, result, error = check_connected(exe, points_path, conn_json, args.radius)
-                    comps = None if result is None else result.get("component_count")
+                    probe = run_bench(exe, points_path, args.radius, graph_only=True, timeout_s=600)
+                    graph = probe.data["graph"] if probe.ok and probe.data else None
+                    connected = bool(graph and graph["connected"])
+                    error = probe.error
+                    comps = None if graph is None else graph["component_count"]
                     row = {
                         "distribution": dist,
                         "n": n,

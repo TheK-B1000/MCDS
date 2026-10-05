@@ -544,6 +544,8 @@ def import_csv_file(
     meta_extra = {
         "input_format": "csv",
         "input_path": str(input_path).replace("\\", "/"),
+        # Hash of the original raw source, so a study can prove which download it used.
+        "input_sha256": sha256_file(Path(input_path)),
         "original_feature_count": original_feature_count,
         "sampling": sample if limit is not None else "all",
         "seed": seed if sample == "random" and limit is not None else None,
@@ -774,6 +776,8 @@ def import_geojson_file(
     meta_extra = {
         "input_format": "geojson",
         "input_path": str(input_path).replace("\\", "/"),
+        # Hash of the original raw source, so a study can prove which download it used.
+        "input_sha256": sha256_file(Path(input_path)),
         "original_feature_count": original,
         "sampling": sample if limit is not None else "all",
         "seed": seed if sample == "random" and limit is not None else None,
