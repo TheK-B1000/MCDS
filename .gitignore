@@ -30,6 +30,10 @@ datasets/real/**
 results/*
 !results/.gitkeep
 
+# Local copies of research papers.
+# Bibliographic metadata and hashes remain version-controlled in papers/README.md.
+papers/primary/*.pdf
+
 # Editor / OS
 .vscode/
 .idea/
