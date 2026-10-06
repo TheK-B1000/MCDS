@@ -6,9 +6,10 @@ the C++ measurement driver `mcds_bench` (memory probes: `mcds_bench_mem`). It
 changes no algorithm, generator, validator or spatial-index semantics; it
 controls *how they are measured*.
 
-This document describes the v1 methodology, locked with the final protocol
-(label and tag `v1.0-final-experiment`; earlier pilot and calibration results
-carry `v1-dev`). It is locked together with the final protocol
+This document describes the v1 methodology. It will be locked with the final
+protocol (label and tag `v1.0-final-experiment`; it is currently `v1.0-dev`,
+reopened after the pre-final audit; earlier pilot and calibration results carry
+`v1-dev`). It is locked together with the final protocol
 ([final_experiment_protocol.md](final_experiment_protocol.md)). Audit trail:
 [methodology_audit.md](methodology_audit.md). Paper verification:
 [source_audit.md](source_audit.md).

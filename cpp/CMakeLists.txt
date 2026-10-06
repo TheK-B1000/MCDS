@@ -188,4 +188,17 @@ if(MCDS_WITH_CGAL)
         target_compile_options(test_spatial_backends PRIVATE -Wall -Wextra -Wpedantic)
     endif()
     add_test(NAME test_spatial_backends COMMAND test_spatial_backends)
+
+    # Output equivalence: current Funke and Li S-MIS against verbatim copies of the
+    # pre-audit full-scan implementations (commit a5cebd7).
+    add_executable(test_search_equivalence tests/test_search_equivalence.cpp
+                   tests/reference/FunkeFullScanRef.cpp tests/reference/LiSMISFullScanRef.cpp)
+    target_link_libraries(test_search_equivalence PRIVATE mcds_bench_support)
+    target_include_directories(test_search_equivalence PRIVATE tests)
+    if(MSVC)
+        target_compile_options(test_search_equivalence PRIVATE /W4 /permissive- /bigobj)
+    else()
+        target_compile_options(test_search_equivalence PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME test_search_equivalence COMMAND test_search_equivalence)
 endif()

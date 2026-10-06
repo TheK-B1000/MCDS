@@ -1,8 +1,7 @@
 {
-  "study_id": "final",
-  "study_seed": 20261101,
-  "description": "v1 final study (primary algorithm comparison, CGAL backend only), pre-registered in docs/final_experiment_protocol.md. NOT LOCKED: reopened after the pre-final audit. synthetic.replicates (36, selected before the audit change) is pending re-selection by the precision-pilot re-run (experiments/precision_pilot_rerun.json). Run only from the final tag after the machine-preparation steps.",
-  "final": true,
+  "study_id": "precision_pilot_rerun",
+  "study_seed": 20261010,
+  "description": "Clean precision pilot re-run after the pre-final audit change (Funke / Li S-MIS implementation efficiency, outputs identical to the pre-audit code). Same design and study_seed as experiments/precision_pilot.json, so the graphs are identical; selects the replicate count mechanically under the unchanged rule experiments/precision/replicate_rule_v1.json (python/replicate_decision.py). Run under the machine-preparation checklist.",
   "algorithms": [
     "marathe",
     "wan",
@@ -20,9 +19,7 @@
     ],
     "sizes": [
       500,
-      1000,
       2000,
-      5000,
       10000
     ],
     "densities": [
@@ -30,7 +27,7 @@
       12.0
     ],
     "radius": 1.0,
-    "replicates": 36,
+    "replicates": 52,
     "geometry_parameters": {
       "clustered": {
         "clusters": 4,
@@ -61,8 +58,8 @@
     "validate": "all",
     "timeout_seconds": 3600
   },
-  "memory_probe": true,
-  "counter_pass": "basic",
+  "memory_probe": false,
+  "counter_pass": null,
   "exact": {
     "max_n": 0,
     "timeout_seconds": 600

@@ -1,7 +1,18 @@
 # v1 Final Experiment Protocol (pre-registered)
 
-**Status: LOCKED** (2026-10-06; git tag `v1.0-final-experiment`,
-`METHODOLOGY_VERSION = "v1.0-final-experiment"`). Decisions recorded on
+**Status: REOPENED BEFORE ANY FINAL DATA — final run BLOCKED.** The
+2026-10-06 lock (commit `a5cebd7`) was rejected for final runtime claims by the
+pre-final read-only audit: Funke and Li S-MIS were
+implemented as full-vertex scans (≈ rounds·n and ≈ blues·n neighbour queries)
+while Marathe and Wan need ≈ 2n, so runtime partly measured implementation
+quality. The fix changes only how Funke and Li find the next affected
+vertices; their outputs are required to be identical to the pre-audit code
+(§3a). The replicate count
+is re-selected by re-running the precision pilot under the unchanged rule.
+Previous status line: **LOCKED** (2026-10-06; git tag `v1.0-final-experiment`,
+`METHODOLOGY_VERSION = "v1.0-final-experiment"`). That local tag was deleted
+before it was ever pushed; the rejected build is identified by its commit
+`a5cebd7`, and the tag name is reserved for the final lock. Decisions recorded on
 2026-10-05 stand (no directional hypotheses, CGAL as the primary backend,
 machine preparation, Li bound not claimed). The generators were frozen by the
 v2 calibration and the replicate count (36) by the precision pilot (§4).
@@ -52,6 +63,29 @@ centralized Wan-level MIS").
   private connectivity check was removed from the timed `solve()`;
   connectivity is verified once, untimed, for all four algorithms.
 * **Wan:** includes the §VI.A black→gray pruning rule.
+
+### 3a. Pre-final audit change: implementation efficiency, identical outputs
+
+* **Funke** (`Funke.cpp`): Phase III queries only the neighbourhoods of this
+  round's new black nodes (red/white → blue) and new blue nodes (white → red,
+  parent = minimum-id new blue), instead of every red/white and white vertex
+  each round. The rounds, colour rules, termination and exceptions are
+  unchanged. Rounds are inherent to the algorithm; the per-round full scan was
+  not.
+* **Li S-MIS** (`LiSMIS.cpp`): Algorithm A's next grey vertex (larger y, then
+  smaller id, thresholds 5→2) is found with a lazy max-heap instead of
+  rescanning every grey vertex per selection. Exact because y never
+  increases (argument in the source and in `docs/algorithms/li_smis.md`).
+* **Equivalence evidence** (required before acceptance):
+  `cpp/tests/test_search_equivalence.cpp` compares the current code with
+  verbatim copies of the pre-audit code (`cpp/tests/reference/`, generated
+  from commit `a5cebd7`) on thousands of random and
+  adversarial instances, on both backends, with identity and permuted ids; a
+  mutation check confirms the test detects tie-break changes. All
+  precision-pilot graphs are also replayed through the new binary and
+  compared with the CDSs recorded by the pre-audit build.
+* Unchanged: Marathe, Wan, generators, CGAL semantics, timing boundaries,
+  validation, metrics, the replicate rule and the experimental design.
 
 ## 4. Datasets
 

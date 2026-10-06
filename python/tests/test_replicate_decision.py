@@ -74,6 +74,16 @@ class RuleFileTests(unittest.TestCase):
         self.assertEqual(syn["geometry_parameters"], final["synthetic"]["geometry_parameters"])
 
 
+class PilotRerunConfigTests(unittest.TestCase):
+    def test_rerun_is_the_original_design_with_a_new_study_id(self):
+        exp = rd._ROOT / "experiments"
+        original = json.loads((exp / "precision_pilot.json").read_text(encoding="utf-8"))
+        rerun = json.loads((exp / "precision_pilot_rerun.json").read_text(encoding="utf-8"))
+        self.assertEqual(rerun["study_id"], "precision_pilot_rerun")
+        strip = lambda d: {k: v for k, v in d.items() if k not in ("study_id", "description")}  # noqa: E731
+        self.assertEqual(strip(rerun), strip(original))  # same seed and design -> identical graphs
+
+
 class LockedSelectionTests(unittest.TestCase):
     """final.json is tied to the pilot's mechanical outcome and its evidence."""
 

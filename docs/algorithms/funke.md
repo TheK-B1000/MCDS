@@ -80,7 +80,8 @@ Termination (§II.A): no white or red nodes remain. Invariants: black nodes are 
 
 ## Implementation-specific decisions
 
-- A safety loop bound of `n + 2` rounds throws if the red frontier stalls. The paper’s invariant says that does not happen on a connected graph.
+- A safety loop bound of `n + 2` rounds. The paper’s invariant says it is never reached on a connected graph; if it were, the loop would stop and the incomplete result would be rejected by the independent validator. (Earlier text said the bound "throws"; it never did, before or after the pre-final audit change.)
+- Pre-final audit change (output-identical to the pre-audit code, commit a5cebd7): Phase III works from this round's new black and new blue nodes — only their neighbours can change colour (adjacency is symmetric) — instead of querying every red/white and white vertex each round. Red/white counts are maintained incrementally instead of rescanned. Equivalence: `cpp/tests/test_search_equivalence.cpp`.
 - Neighbourhood is a radius query, not a received-message buffer. A node “hears” exactly its current geometric neighbours.
 
 ## Unresolved ambiguities

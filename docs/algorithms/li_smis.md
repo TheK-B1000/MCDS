@@ -84,6 +84,7 @@ The centralized loop says “there exists”: it does not rank grey nodes that a
 
 - Union-find parent is the smaller index.
 - Neighbour buffers are reused. No explicit graph is stored.
+- Pre-final audit change (output-identical to the pre-audit code, commit a5cebd7): the next grey vertex is found with a lazy max-heap keyed by (y desc, id asc). y(g) never increases (blacks are fixed, greys only leave, union-find merges only reduce distinct components), so stored keys are upper bounds; a popped vertex whose recomputed y equals its key is the true best, and a vertex whose y falls below 2 can never qualify again. While threshold i is active no grey has y > i, so the 5→2 threshold loop selects exactly the global best while y ≥ 2. This replaces the pre-audit rescan of every grey vertex per selection (≈ blues·n queries). Equivalence: `cpp/tests/test_search_equivalence.cpp`.
 
 ## Unresolved ambiguities
 

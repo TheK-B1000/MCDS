@@ -1,10 +1,11 @@
-#include "algorithms/LiSMIS.hpp"
+// VERBATIM pre-audit implementation (commit a5cebd7, cpp/src/algorithms/LiSMIS.cpp); only the
+// include and class name differ. Test-only reference for output equivalence.
+#include "reference/FullScanReference.hpp"
 
 #include "algorithms/WanLevelMis.hpp"
 
 #include <algorithm>
 #include <cstdint>
-#include <queue>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -121,7 +122,7 @@ void mergeTouchedBlackComponents(
 
 }  // namespace
 
-MCDSResult LiSMISAlgorithm::solve(
+MCDSResult LiSMISFullScanRef::solve(
     const PointSet& points,
     const SpatialIndex& index,
     double radius) {
@@ -176,59 +177,58 @@ MCDSResult LiSMISAlgorithm::solve(
      *
      * ------------------------------------------------
      */
-    /*
-     * Selection order (unchanged from the pre-audit code): among grey vertices with
-     * y >= threshold, the one with the larger y, then the smaller ID; the
-     * thresholds 5, 4, 3, 2 are taken in turn.
-     *
-     * The vertex is found with a lazy max-heap instead of rescanning every
-     * grey vertex per selection. This is exact because y(g) never increases:
-     * black vertices never change, a grey vertex only leaves the grey set, and
-     * DSU merges can only reduce the number of distinct components. Hence
-     *   * a stored key is an upper bound of the current key;
-     *   * a vertex whose recomputed y equals its stored key when it reaches
-     *     the top outranks every other grey vertex (ties: the smaller ID would
-     *     have reached the top first);
-     *   * a vertex whose y drops below 2 can never qualify again.
-     * Because y cannot rise, while threshold i is active no grey vertex has
-     * y > i, so "best vertex with y >= i, for i = 5..2" is the same as
-     * "best vertex overall while its y >= 2". Output identity with the pre-audit
-     * code (commit a5cebd7, which rescanned every grey vertex per selection)
-     * is checked by tests/test_search_equivalence.cpp against a verbatim copy.
-     */
-    struct Candidate {
-        int y;
-        int id;
-        std::size_t vertex;
-    };
-    const auto ranksLower = [](const Candidate& a, const Candidate& b) {
-        return a.y < b.y || (a.y == b.y && a.id > b.id);  // max-heap: larger y, then smaller id
-    };
-    std::priority_queue<Candidate, std::vector<Candidate>, decltype(ranksLower)> heap(ranksLower);
-    for (std::size_t g = 0; g < n; ++g) {
-        if (colour[g] != Colour::Grey) {
-            continue;
-        }
-        const int y = computeY(points, index, radius, g, colour, dsu, neighbors, componentRoots);
-        if (y >= 2) {
-            heap.push(Candidate{y, points.idAt(g), g});
-        }
-    }
-    while (!heap.empty()) {
-        const Candidate top = heap.top();
-        heap.pop();
-        const int y = computeY(points, index, radius, top.vertex, colour, dsu, neighbors, componentRoots);
-        if (y > top.y) {
-            throw std::logic_error("LiSMISAlgorithm: y increased; selection invariant violated");
-        }
-        if (y < top.y) {
-            if (y >= 2) {
-                heap.push(Candidate{y, top.id, top.vertex});
+    for (int threshold = 5; threshold >= 2; --threshold) {
+        for (;;) {
+            std::size_t bestVertex = n;
+            int bestY = -1;
+
+            for (std::size_t g = 0; g < n; ++g) {
+                if (colour[g] != Colour::Grey) {
+                    continue;
+                }
+
+                const int y = computeY(
+                    points,
+                    index,
+                    radius,
+                    g,
+                    colour,
+                    dsu,
+                    neighbors,
+                    componentRoots);
+
+                if (y < threshold) {
+                    continue;
+                }
+
+                /*
+                 * The centralized Algorithm A only requires a qualifying
+                 * grey vertex. For deterministic execution we use the
+                 * ranking from the paper's distributed implementation:
+                 *   1. larger y
+                 *   2. smaller ID
+                 */
+                if (bestVertex == n || y > bestY ||
+                    (y == bestY && points.idAt(g) < points.idAt(bestVertex))) {
+                    bestVertex = g;
+                    bestY = y;
+                }
             }
-            continue;
+
+            if (bestVertex == n) {
+                break;
+            }
+
+            colour[bestVertex] = Colour::Blue;
+            mergeTouchedBlackComponents(
+                points,
+                index,
+                radius,
+                bestVertex,
+                colour,
+                dsu,
+                neighbors);
         }
-        colour[top.vertex] = Colour::Blue;
-        mergeTouchedBlackComponents(points, index, radius, top.vertex, colour, dsu, neighbors);
     }
 
     /*

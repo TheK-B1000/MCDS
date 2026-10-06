@@ -98,4 +98,10 @@ resumable if interrupted.
 The clean precision pilot ran from `4e03a2c`, uninterrupted, and passed every
 integrity check. The frozen rule selected **k = 36** (20 and 28 failed; runtime
 precision was binding). See `experiments/precision/replicate_selection_v1.json`
-and the protocol §4. The protocol is now locked (tag `v1.0-final-experiment`).
+and the protocol §4. The protocol was then locked (commit `a5cebd7`).
+
+**Superseded.** A read-only pre-final audit rejected that lock for final runtime
+claims (Funke / Li S-MIS full-vertex scans). The protocol is reopened, the
+local tag was deleted before being pushed, and the precision pilot will be
+re-run after the output-identical fix (`experiments/precision_pilot_rerun.json`).
+See `methodology_audit.md`, "Pre-final audit change".

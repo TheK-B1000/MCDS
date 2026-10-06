@@ -398,3 +398,28 @@ hand-over report). Calibration-gated admission: `feasibility_calibration`
   freeze commit. `v1.0-experiments` remains as a historical tag.
 * From here on, a scientific change means a new methodology revision (new tag,
   new `study_id`) and rerunning the affected results, never a silent patch.
+
+## Pre-final audit change (before any final data)
+
+* A read-only audit of the frozen build (commit `a5cebd7`) found it
+  correct (implicit graph, CGAL predicate, validation, timed region all PASS)
+  but implementation efficiency asymmetric: Li S-MIS rescanned every grey
+  vertex per connector (≈ 192–238 queries per vertex at n = 5000, ≈ 79% of the
+  pilot's n = 10000 wall time) and Funke queried every red/white and white
+  vertex every round (≈ 11–100 queries per vertex), while Marathe and Wan use
+  ≈ 2.1. The final run was blocked.
+* Only those two search loops were rewritten (protocol §3a). Outputs must be
+  identical to the pre-audit code; evidence: `test_search_equivalence` and a full replay of the
+  precision-pilot graphs. The precision pilot is re-run because runtime
+  precision selected k.
+* `docs/algorithms/funke.md` corrected: the n + 2 round guard stops the loop,
+  it does not throw (true before and after the change).
+* The local tag `v1.0-final-experiment` (annotated object `73c91fb`, on
+  `a5cebd7`) was deleted on the owner's request before it was ever pushed, so
+  the team only ever sees one final tag. The name will be created again on the
+  final lock commit. The rejected build is identified by commit `a5cebd7`;
+  results made with it record that commit and the label
+  `v1.0-final-experiment`.
+* Work stays on `main` (no revision branch, no v1.1 naming). The protocol
+  label is `v1.0-dev` until the final lock.
+
