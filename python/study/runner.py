@@ -30,6 +30,7 @@ from . import config as config_mod
 from . import datasets as datasets_mod
 from . import environment as env_mod
 from . import fairness
+from . import progress as progress_mod
 from .schedule import execution_order, schedule_index
 from .schema import (
     DATASET_COLUMNS,
@@ -84,15 +85,17 @@ def _cell(v: Any) -> Any:
 
 
 class Study:
-    def __init__(self, config_path: Path, repo_root: Path, *, log: Callable[[str], None] = print,
-                 allow_dirty: bool = False, allow_environment_change: bool = False):
+    def __init__(self, config_path: Path, repo_root: Path, *, log: Callable[[str], None] | None = None,
+                 allow_dirty: bool = False, allow_environment_change: bool = False,
+                 show_progress: bool = True):
         self.repo_root = repo_root
         self.config_path = config_path
         self.cfg = config_mod.load(config_path)
         self.config_sha = config_mod.config_sha256(self.cfg)
         out = Path(self.cfg["output_dir"])
         self.out = out if out.is_absolute() else repo_root / out
-        self.log = log
+        self.show_progress = show_progress
+        self.log = progress_mod.make_logger(log)
         self.allow_dirty = allow_dirty
         self.allow_environment_change = allow_environment_change
         self.bench = bench_mod.find_binary(repo_root, "mcds_bench")
@@ -171,16 +174,23 @@ class Study:
     def prepare_datasets(self) -> list[dict[str, Any]]:
         records = []
         planned = datasets_mod.plan(self.cfg)
-        for p in planned:
-            path = self._dataset_state_path(p)
-            if path.is_file():
-                records.append(_read_json(path))
-                continue
-            rec = datasets_mod.prepare(p, self.cfg, self.repo_root, self.out, self.bench)
-            _atomic_json(path, rec)
-            records.append(rec)
-            self.log(f"[dataset {p.plan_index + 1}/{len(planned)}] {p.dataset_id}: {rec['status']}"
-                     f" (attempts={len(rec['attempts'])})")
+        with progress_mod.track(
+            planned, total=len(planned), desc="datasets", unit="graph", enabled=self.show_progress,
+        ) as bar:
+            for p in bar:
+                path = self._dataset_state_path(p)
+                if path.is_file():
+                    records.append(_read_json(path))
+                    if hasattr(bar, "set_postfix_str"):
+                        bar.set_postfix_str(f"cached {p.dataset_id[:40]}", refresh=False)
+                    continue
+                rec = datasets_mod.prepare(p, self.cfg, self.repo_root, self.out, self.bench)
+                _atomic_json(path, rec)
+                records.append(rec)
+                self.log(f"[dataset {p.plan_index + 1}/{len(planned)}] {p.dataset_id}: {rec['status']}"
+                         f" (attempts={len(rec['attempts'])})")
+                if hasattr(bar, "set_postfix_str"):
+                    bar.set_postfix_str(f"{rec['status']} {p.dataset_id[:36]}", refresh=False)
         return records
 
     # ------------------------------------------------------------------- runs
@@ -220,7 +230,8 @@ class Study:
     def run_graphs(self, records: list[dict[str, Any]]) -> None:
         runnable = [r for r in records if r["status"] == "ok"]
         timeout = float(self.cfg["timing"]["timeout_seconds"])
-        for i, rec in enumerate(runnable, start=1):
+        pending: list[tuple[dict[str, Any], str, dict[str, Any]]] = []
+        for rec in runnable:
             gdir = self._graph_dir(rec)
             gdir.mkdir(parents=True, exist_ok=True)
             for fname, step in self._steps(rec):
@@ -228,6 +239,21 @@ class Study:
                 failed = gdir / (fname + ".failed.json")
                 if target.is_file() or failed.is_file():
                     continue
+                pending.append((rec, fname, step))
+
+        remaining_by_graph: dict[str, int] = {}
+        for rec, _, _ in pending:
+            remaining_by_graph[rec["graph_id"]] = remaining_by_graph.get(rec["graph_id"], 0) + 1
+
+        with progress_mod.track(
+            pending, total=len(pending), desc="executions", unit="step", enabled=self.show_progress,
+        ) as bar:
+            for rec, fname, step in bar:
+                gdir = self._graph_dir(rec)
+                target = gdir / fname
+                failed = gdir / (fname + ".failed.json")
+                if hasattr(bar, "set_postfix_str"):
+                    bar.set_postfix_str(f"{rec['planned']['dataset_id'][:32]} {fname}"[:48], refresh=False)
                 t0 = time.perf_counter()
                 outcome = bench_mod.run_bench(
                     step["binary"], Path(rec["csv_path"]), rec["planned"]["radius"],
@@ -240,23 +266,28 @@ class Study:
                     _atomic_json(failed, {"step": fname, "error": outcome.error, "returncode": outcome.returncode,
                                           "algorithms": step["algorithms"]})
                     self.log(f"  FAILED {rec['planned']['dataset_id']} {fname}: {outcome.error}")
-                    continue
-                fp = outcome.data["input"]["points_fingerprint"]
-                if fp != rec["points_fingerprint"]:
-                    raise StudyError(f"FAIRNESS VIOLATION: {fname} for {rec['planned']['dataset_id']} saw fingerprint {fp}, "
-                                     f"expected {rec['points_fingerprint']}")
-                solver_name = "mcds_bench_mem" if step["binary"] == self.bench_mem else "mcds_bench"
-                _atomic_json(gdir / (fname + ".meta.json"), {
-                    "schedule_row": step["schedule_row"], "order": step["order"],
-                    "wall_s": time.perf_counter() - t0,
-                    # Provenance at execution time (not study start), so a
-                    # resumed study can never mislabel rows.
-                    "git_commit": self.current["git"]["commit"], "git_dirty": self.current["git"]["dirty"],
-                    "machine_id": self.current["machine_id"],
-                    "solver_sha256": self.current["solvers"][solver_name]["sha256"],
-                    "build_config": (self.current.get("solver_build") or {}).get("config"),
-                })
-            self.log(f"[graph {i}/{len(runnable)}] {rec['planned']['dataset_id']} done")
+                else:
+                    fp = outcome.data["input"]["points_fingerprint"]
+                    if fp != rec["points_fingerprint"]:
+                        raise StudyError(
+                            f"FAIRNESS VIOLATION: {fname} for {rec['planned']['dataset_id']} "
+                            f"saw fingerprint {fp}, expected {rec['points_fingerprint']}"
+                        )
+                    solver_name = "mcds_bench_mem" if step["binary"] == self.bench_mem else "mcds_bench"
+                    _atomic_json(gdir / (fname + ".meta.json"), {
+                        "schedule_row": step["schedule_row"], "order": step["order"],
+                        "wall_s": time.perf_counter() - t0,
+                        # Provenance at execution time (not study start), so a
+                        # resumed study can never mislabel rows.
+                        "git_commit": self.current["git"]["commit"], "git_dirty": self.current["git"]["dirty"],
+                        "machine_id": self.current["machine_id"],
+                        "solver_sha256": self.current["solvers"][solver_name]["sha256"],
+                        "build_config": (self.current.get("solver_build") or {}).get("config"),
+                    })
+                gid = rec["graph_id"]
+                remaining_by_graph[gid] -= 1
+                if remaining_by_graph[gid] == 0:
+                    self.log(f"[graph] {rec['planned']['dataset_id']} done")
 
     # --------------------------------------------------------------- assembly
     def assemble(self, records: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:

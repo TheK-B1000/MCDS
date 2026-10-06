@@ -242,7 +242,7 @@ class EndToEndTests(unittest.TestCase):
                        "replicates": 2, "geometry_parameters": {"perturbed_grid": {"jitter": 0.15}}},
             timing={"repetitions": 2, "warmups": 1}, exact={"max_n": 0})
         path = self._write(cfg)
-        res = Study(path, REPO_ROOT, log=lambda m: None).run()
+        res = Study(path, REPO_ROOT, log=lambda m: None, show_progress=False).run()
         self.assertTrue(res["fairness"]["passed"], res["fairness"])
         raw = self._rows("raw_runs.csv")
         # 4 graphs x 4 algorithms x (1 warmup + 2 timed + 1 memory probe + 1 counter pass)
@@ -269,7 +269,7 @@ class EndToEndTests(unittest.TestCase):
                 (r["neighbor_queries"], r["candidates_examined"], r["cds_hash"]))
         self.assertTrue(all(len(v) == 1 for v in work.values()))
         # Resume: re-running must not duplicate anything.
-        Study(path, REPO_ROOT, log=lambda m: None).run()
+        Study(path, REPO_ROOT, log=lambda m: None, show_progress=False).run()
         self.assertEqual(len(self._rows("raw_runs.csv")), len(raw))
         attempts = self._rows("generation_attempts.csv")
         self.assertEqual(sum(1 for a in attempts if a["accepted"] == "true"), 4)
@@ -277,17 +277,17 @@ class EndToEndTests(unittest.TestCase):
     def test_changed_config_is_refused_on_resume(self):
         path = self._write(_base_config(timing={"repetitions": 1, "warmups": 0}, memory_probe=False,
                                         counter_pass=None))
-        Study(path, REPO_ROOT, log=lambda m: None).run(datasets_only=True)
+        Study(path, REPO_ROOT, log=lambda m: None, show_progress=False).run(datasets_only=True)
         path = self._write(_base_config(timing={"repetitions": 2, "warmups": 0}, memory_probe=False,
                                         counter_pass=None))
         with self.assertRaises(StudyError):
-            Study(path, REPO_ROOT, log=lambda m: None).run(datasets_only=True)
+            Study(path, REPO_ROOT, log=lambda m: None, show_progress=False).run(datasets_only=True)
 
     def test_exact_opt_and_empirical_ratio(self):
         cfg = _base_config(synthetic={"geometries": ["uniform"], "sizes": [12], "densities": [3.0], "replicates": 1},
                            timing={"repetitions": 1, "warmups": 0}, memory_probe=False, counter_pass=None,
                            exact={"max_n": 12})
-        Study(self._write(cfg), REPO_ROOT, log=lambda m: None).run()
+        Study(self._write(cfg), REPO_ROOT, log=lambda m: None, show_progress=False).run()
         raw = self._rows("raw_runs.csv")
         for r in raw:
             self.assertNotEqual(r["opt_size"], "")
@@ -304,7 +304,7 @@ class EndToEndTests(unittest.TestCase):
                "external": {"datasets": [
                    {"name": "line", "path": str(real), "radii": [70.0, 10000.0], "units": "meters"},
                    {"name": "missing", "path": str(self.tmp / "nope.csv"), "radii": [1.0], "units": "meters"}]}}
-        res = Study(self._write(cfg), REPO_ROOT, log=lambda m: None).run()
+        res = Study(self._write(cfg), REPO_ROOT, log=lambda m: None, show_progress=False).run()
         self.assertTrue(res["fairness"]["passed"])
         ds = self._rows("datasets.csv")
         r70 = next(d for d in ds if d["radius"] == "70.0")

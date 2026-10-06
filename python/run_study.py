@@ -31,8 +31,10 @@ REPO_ROOT = _HERE.parent
 
 
 def _study(args) -> Study:
+    show = not getattr(args, "no_progress", False)
     return Study(Path(args.config), REPO_ROOT, allow_dirty=args.allow_dirty,
-                 allow_environment_change=args.allow_environment_change)
+                 allow_environment_change=args.allow_environment_change,
+                 show_progress=show)
 
 
 def cmd_plan(args) -> int:
@@ -121,8 +123,10 @@ def main(argv: list[str] | None = None) -> int:
             p.add_argument("--datasets-only", action="store_true")
             p.add_argument("--skip-preflight", action="store_true",
                            help="skip the small all-algorithms validity check before a campaign")
+            p.add_argument("--no-progress", action="store_true",
+                           help="disable tqdm progress bars on dataset and execution loops")
         else:
-            p.set_defaults(datasets_only=False, skip_preflight=False)
+            p.set_defaults(datasets_only=False, skip_preflight=False, no_progress=False)
     args = parser.parse_args(argv)
     try:
         return handlers[args.command](args)
