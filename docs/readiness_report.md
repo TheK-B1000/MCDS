@@ -92,3 +92,10 @@ Measured wall time per n = 10000, density 12 graph (4 algorithms × (5 + 1)
 runs) is ≈ 48 s (uniform, dumbbell) and ≈ 79 s (clustered), with Li's
 S-MIS phase taking most of it. The pilot has 520 such graphs. It is
 resumable if interrupted.
+
+## 6. Outcome (added after the pilot)
+
+The clean precision pilot ran from `4e03a2c`, uninterrupted, and passed every
+integrity check. The frozen rule selected **k = 36** (20 and 28 failed; runtime
+precision was binding). See `experiments/precision/replicate_selection_v1.json`
+and the protocol §4. The protocol is now locked (tag `v1.0-final-experiment`).

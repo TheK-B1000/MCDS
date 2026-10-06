@@ -314,7 +314,7 @@ Configs in `experiments/`: `smoke`, `pilot`, `precision_pilot` (replicate
 count), `exact_small` (|D|/OPT for n ≤ 16), `spatial_backend` (optional
 CGAL-vs-grid sensitivity), `representation_ablation` (optional implicit memory vs
 count-only explicit-size estimate; no graph is built), `real_world_scaling` (template), `final` (primary study;
-CGAL only; not yet locked). Every config states its `spatial_backend`.
+CGAL only; locked at 36 replicates, tag `v1.0-final-experiment`). Every config states its `spatial_backend`.
 
 ### Real-world / external datasets
 

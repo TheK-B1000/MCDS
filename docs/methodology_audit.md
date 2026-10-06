@@ -385,3 +385,16 @@ Preregistered calibration on independent validation seeds:
 `experiments/calibration/generator_calibration_v1.json` (results: see the
 hand-over report). Calibration-gated admission: `feasibility_calibration`
 (file + sha256 + min_acceptance_rate); forbidden for `final: true`.
+
+## Final freeze (2026-10-06)
+
+* Generators frozen by the v2 calibration (`experiments/calibration/generator_freeze_v2.json`).
+* Replicate count 36, selected mechanically by the clean precision pilot under the
+  rule frozen beforehand (`experiments/precision/replicate_selection_v1.json`):
+  k = 20 and 28 failed, 36 was the first k to pass in every stratum, and runtime
+  precision (Funke on clustered graphs) was binding.
+* `final.json` and `sparse_density5.json` set to 36; `METHODOLOGY_VERSION` set
+  to `v1.0-final-experiment`; annotated tag `v1.0-final-experiment` on the
+  freeze commit. `v1.0-experiments` remains as a historical tag.
+* From here on, a scientific change means a new methodology revision (new tag,
+  new `study_id`) and rerunning the affected results, never a silent patch.

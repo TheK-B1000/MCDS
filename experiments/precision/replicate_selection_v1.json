@@ -1,0 +1,94 @@
+{
+  "name": "Replicate-count selection v1 (mechanical outcome of the clean precision pilot)",
+  "decided_utc": "2026-10-06T21:44:34Z",
+  "decided_utc_source": "system clock when this record was written",
+  "selected_replicates": 36,
+  "status": "selected",
+  "rule": "experiments/precision/replicate_rule_v1.json (frozen before the pilot; amendments recorded inside, all before any pilot data)",
+  "decision_tool": "python/replicate_decision.py (exit 0)",
+  "pilot": {
+    "config": "experiments/precision_pilot.json",
+    "commit": "4e03a2cede63712cd7b6bea04af8808f7ff66fae",
+    "working_tree_dirty": false,
+    "run_started_utc": "2026-10-06T14:23:23.567664+00:00",
+    "last_timing_written_utc": "2026-10-06T21:27:52Z",
+    "uninterrupted": "single environment record (no resume); started from an empty study directory (0 cached)",
+    "power_plan": "Power Scheme GUID: 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c  (High performance)",
+    "cpu": "AMD Ryzen 7 3700X 8-Core Processor",
+    "graphs": 1560,
+    "cells": 30,
+    "timed_runs": 31200,
+    "valid_timed_runs": 31200,
+    "generation_attempts": 1592,
+    "rejected_disconnected": 32,
+    "fairness": "PASS, 0 violations, 0 warnings",
+    "failures": 0
+  },
+  "outcome_by_k": {
+    "20": {
+      "passes_all_strata": false,
+      "failing_strata": [
+        "clustered d=8",
+        "clustered d=12",
+        "corridor d=8",
+        "corridor d=12"
+      ],
+      "max_cds_hw_pp": 0.459,
+      "min_runtime_share_within_10pct": 0.5,
+      "max_runtime_hw": 0.136
+    },
+    "28": {
+      "passes_all_strata": false,
+      "failing_strata": [
+        "clustered d=8",
+        "clustered d=12"
+      ],
+      "max_cds_hw_pp": 0.347,
+      "min_runtime_share_within_10pct": 0.833,
+      "max_runtime_hw": 0.108
+    },
+    "36": {
+      "passes_all_strata": true,
+      "failing_strata": [],
+      "max_cds_hw_pp": 0.308,
+      "min_runtime_share_within_10pct": 1.0,
+      "max_runtime_hw": 0.092
+    },
+    "44": {
+      "passes_all_strata": true,
+      "failing_strata": [],
+      "max_cds_hw_pp": 0.28,
+      "min_runtime_share_within_10pct": 1.0,
+      "max_runtime_hw": 0.08
+    },
+    "52": {
+      "passes_all_strata": true,
+      "failing_strata": [],
+      "max_cds_hw_pp": 0.251,
+      "min_runtime_share_within_10pct": 1.0,
+      "max_runtime_hw": 0.071
+    }
+  },
+  "binding_constraint": "runtime precision: at k = 28 only 15/18 clustered comparisons per density were within +/-10% (share 0.83 < 0.90), all involving Funke at n = 2000 and 10000; CDS-fraction precision already met the targets at k = 20 (max half-width 0.46 pp vs 1.0 pp).",
+  "methods_statement": "Each primary experimental cell uses 36 independently generated graph instances. This replicate count was selected before final data collection using a preregistered precision pilot with exact Williams execution-order balance; 36 was the smallest candidate count for which all required CDS-quality and runtime confidence-interval precision criteria were satisfied across all pilot strata.",
+  "evidence_sha256": {
+    "experiments/precision/replicate_rule_v1.json": "06057dc8cd1c92b525120f5c8b340ec50834f5fe983275f40b2cdf21c59620ef",
+    "python/replicate_decision.py": "843db3a4613969fac4da41806161bc33e8759ec7fcdcc7558578dd030704f776",
+    "experiments/precision_pilot.json": "ce42cce1ed4163c965f02b0635399bb158f81f6c8f39f96a4b49495a645f137a",
+    "results/studies/precision_pilot/replicate_decision.txt": "e07d9971b5a88645adebc975f9fa2a778552a9be87786646d7fcede7847db326",
+    "results/studies/precision_pilot/replicate_decision.json": "ee93e8d2bcf94cf212bb0bc37f9e0125fb2ec78fb0c09e51f00a140850b60528",
+    "results/studies/precision_pilot/graph_level.csv (decision input)": "25274e006f9d492c26ca4af16d6f76b6e7cdecb5e06f3e8e433e4ff77bec820d",
+    "results/studies/precision_pilot/raw_runs.csv (not committed, 32.9 MB)": "42b7225b35a39c512d5fbb1e9748118b664a0eeeeecba1ac0cb4b7fc86011205",
+    "results/studies/precision_pilot/datasets.csv (not committed)": "b84b73ab3183c77da33a53b23d8dcb2a29af0cb6fa75f1e546c0adb89ec7c8d5",
+    "results/studies/precision_pilot/generation_attempts.csv (not committed)": "8c4b243043b47c15939dc3f3d5aa604c1d9467d2bd76fa161393bcd91fef276e",
+    "results/studies/precision_pilot/fairness_report.json": "57e85b99e990189f0fabe887493b0d10826071d3823a8014ccd9accc9f8ed162",
+    "results/studies/precision_pilot/environment.json": "f584860c51837c5af6e40fc76d50f061a95b613f4e32b528d7c9c6f9217144ac"
+  },
+  "committed_copies": {
+    "experiments/precision/precision_pilot_replicate_decision.txt": "byte-identical copy of results/studies/precision_pilot/replicate_decision.txt",
+    "experiments/precision/precision_pilot_replicate_decision.json": "byte-identical copy of results/studies/precision_pilot/replicate_decision.json",
+    "experiments/precision/precision_pilot_graph_level.csv": "byte-identical copy of results/studies/precision_pilot/graph_level.csv",
+    "experiments/precision/precision_pilot_fairness_report.json": "byte-identical copy of results/studies/precision_pilot/fairness_report.json",
+    "experiments/precision/precision_pilot_environment.json": "byte-identical copy of results/studies/precision_pilot/environment.json"
+  }
+}

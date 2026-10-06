@@ -1,7 +1,7 @@
 {
   "study_id": "final",
   "study_seed": 20261101,
-  "description": "v1 final study (primary algorithm comparison, CGAL backend only), pre-registered in docs/final_experiment_protocol.md. NOT YET LOCKED: synthetic.replicates is a placeholder until the precision pilot (experiments/precision_pilot.json) justifies the count. Run only from the tagged clean commit after the machine-preparation steps; any methodology change requires a new revision and study_id.",
+  "description": "v1 final study (primary algorithm comparison, CGAL backend only), pre-registered in docs/final_experiment_protocol.md. LOCKED (tag v1.0-final-experiment): 36 independent graphs per cell, selected mechanically by the preregistered precision pilot (experiments/precision/replicate_selection_v1.json). Run only from the tagged clean commit after the machine-preparation steps; any methodology change requires a new revision and study_id.",
   "final": true,
   "algorithms": [
     "marathe",
@@ -30,7 +30,7 @@
       12.0
     ],
     "radius": 1.0,
-    "replicates": 20,
+    "replicates": 36,
     "geometry_parameters": {
       "clustered": {
         "clusters": 4,

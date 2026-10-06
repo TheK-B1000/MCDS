@@ -74,6 +74,37 @@ class RuleFileTests(unittest.TestCase):
         self.assertEqual(syn["geometry_parameters"], final["synthetic"]["geometry_parameters"])
 
 
+class LockedSelectionTests(unittest.TestCase):
+    """final.json is tied to the pilot's mechanical outcome and its evidence."""
+
+    def test_final_uses_selected_count_and_evidence_is_intact(self):
+        import hashlib
+        prec = rd._ROOT / "experiments" / "precision"
+        sel = json.loads((prec / "replicate_selection_v1.json").read_text(encoding="utf-8"))
+        final = json.loads((rd._ROOT / "experiments" / "final.json").read_text(encoding="utf-8"))
+        self.assertEqual(sel["status"], "selected")
+        self.assertEqual(final["synthetic"]["replicates"], sel["selected_replicates"])
+        self.assertIn(final["synthetic"]["replicates"], RULE["ladder"])
+        h = sel["evidence_sha256"]
+        def sha(p):
+            return hashlib.sha256(p.read_bytes()).hexdigest()
+        self.assertEqual(sha(rd.RULE), h["experiments/precision/replicate_rule_v1.json"])
+        self.assertEqual(sha(rd._ROOT / "python" / "replicate_decision.py"), h["python/replicate_decision.py"])
+        self.assertEqual(sha(rd._ROOT / "experiments" / "precision_pilot.json"), h["experiments/precision_pilot.json"])
+        self.assertEqual(sha(prec / "precision_pilot_replicate_decision.txt"),
+                         h["results/studies/precision_pilot/replicate_decision.txt"])
+        self.assertEqual(sha(prec / "precision_pilot_graph_level.csv"),
+                         h["results/studies/precision_pilot/graph_level.csv (decision input)"])
+
+    def test_committed_decision_input_reproduces_the_selection(self):
+        with tempfile.TemporaryDirectory() as d:
+            import shutil
+            shutil.copyfile(rd._ROOT / "experiments" / "precision" / "precision_pilot_graph_level.csv",
+                            Path(d) / "graph_level.csv")
+            self.assertEqual(rd.main(["--study", d, "--json", str(Path(d) / "dec.json")]), 0)
+            self.assertEqual(json.loads((Path(d) / "dec.json").read_text(encoding="utf-8"))["chosen_k"], 36)
+
+
 class DecisionTests(unittest.TestCase):
     def test_t_quantile(self):
         for df, ref in ((19, 2.093024), (27, 2.051831), (51, 2.007584)):

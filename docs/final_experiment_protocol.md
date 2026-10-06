@@ -1,12 +1,12 @@
 # v1 Final Experiment Protocol (pre-registered)
 
-**Status: NOT YET LOCKED.** Decisions recorded on 2026-10-05 stand (no
-directional hypotheses, CGAL as the primary backend, machine preparation,
-Li bound not claimed). Still open before the lock: the replicate count
-(justified by the precision pilot, §4) and the final review of the
-experimental cells. When locked, the protocol and code are tagged together
-(e.g. `v1.0-final-experiment`; no such tag exists yet). From the first final
-run onward, nothing below may be changed in response to results. A scientific change (algorithm semantics,
+**Status: LOCKED** (2026-10-06; git tag `v1.0-final-experiment`,
+`METHODOLOGY_VERSION = "v1.0-final-experiment"`). Decisions recorded on
+2026-10-05 stand (no directional hypotheses, CGAL as the primary backend,
+machine preparation, Li bound not claimed). The generators were frozen by the
+v2 calibration and the replicate count (36) by the precision pilot (§4).
+The older tag `v1.0-experiments` is historical provenance only and is not
+this protocol. From the first final run onward, nothing below may be changed in response to results. A scientific change (algorithm semantics,
 timing boundary, generator, validator, metric definition, exclusion rule or
 schema) means: stop, document it, create a new methodology revision (new tag,
 new `study_id`), and rerun the affected results. Ordinary bugs found during
@@ -131,8 +131,7 @@ centralized Wan-level MIS").
   distance on independent validation seeds) is version-controlled.
 * Observed degree statistics are recorded; the target is not assumed to be
   achieved.
-* **Replicate-count selection (rule frozen; replicates OPEN until the
-  pilot).** The final number of independent graph instances per
+* **Replicate-count selection — LOCKED: 36 independent graphs per cell.** The final number of independent graph instances per
   experimental cell will be selected using a clean precision pilot performed
   before the final experimental freeze. Candidate replicate counts are
   k ∈ {20, 28, 36, 44, 52}, preserving exact Williams execution-order balance
@@ -176,9 +175,26 @@ centralized Wan-level MIS").
     always passes). A nested "k+8 estimate inside the k CI" test was rejected
     because cumulative estimates share observations. Point-estimate
     trajectories across k are plotted as a **non-binding** diagnostic.
-  * `final.json` currently holds a placeholder (20). Write-up: "Each
-    experimental cell was evaluated on k independently generated graph
-    instances, selected through a preregistered precision pilot."
+  * **Outcome** (`experiments/precision/replicate_selection_v1.json`, with
+    SHA-256 of the rule, decision tool, pilot config, decision output and
+    its input; byte-identical copies of the decision output, its input
+    `graph_level.csv`, the fairness report and the environment record are
+    committed under `experiments/precision/`): the clean pilot ran from
+    commit `4e03a2c` with no local changes, uninterrupted, from an empty
+    study directory (1,560 graphs, 30 cells, 31,200 timed runs, all valid;
+    fairness PASS with 0 violations and 0 warnings; 0 failures). k = 20
+    and 28 failed; **36 was the first k to pass in every stratum** (44 and
+    52 also pass). Runtime precision was binding: at k = 28 only 15/18
+    clustered comparisons per density were within ±10%, all involving
+    Funke at n = 2000 and 10000. CDS-fraction precision already passed at
+    k = 20 (max half-width 0.46 pp against 1 pp). `final.json` and the
+    sparse study use 36.
+  * Methods statement: "Each primary experimental cell uses 36 independently
+    generated graph instances. This replicate count was selected before
+    final data collection using a preregistered precision pilot with exact
+    Williams execution-order balance; 36 was the smallest candidate count
+    for which all required CDS-quality and runtime confidence-interval
+    precision criteria were satisfied across all pilot strata."
 * The graph instance is the statistical unit; timing repetitions on one graph are
   technical replicates, summarised by their median, and never counted as
   additional samples. Results are reported as distributions, paired effects

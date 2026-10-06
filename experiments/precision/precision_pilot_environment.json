@@ -1,0 +1,90 @@
+{
+  "timestamp_utc": "2026-10-06T14:23:23.567664+00:00",
+  "os": {
+    "platform": "Windows-11-10.0.26200-SP0",
+    "system": "Windows",
+    "release": "11",
+    "version": "10.0.26200",
+    "machine": "AMD64"
+  },
+  "cpu": {
+    "name": "AMD Ryzen 7 3700X 8-Core Processor",
+    "logical_cores": 16,
+    "physical_cores": 8
+  },
+  "memory": {
+    "total_ram_bytes": 51413917696
+  },
+  "power_plan": "Power Scheme GUID: 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c  (High performance)",
+  "python": {
+    "version": "3.13.0",
+    "implementation": "CPython",
+    "executable": "C:\\Users\\K-B\\AppData\\Local\\Programs\\Python\\Python313\\python.exe"
+  },
+  "python_packages": {
+    "matplotlib": "3.11.2",
+    "tqdm": "4.70.1",
+    "pyproj": "3.8.0",
+    "ijson": "3.5.1",
+    "numpy": "2.5.3"
+  },
+  "solver_build": {
+    "config": "Release",
+    "compiler_id": "MSVC",
+    "compiler_version": "19.44.35222.0",
+    "cxx_standard": 17,
+    "cplusplus_macro": 201703,
+    "cxx_flags": "/DWIN32 /D_WINDOWS /GR /EHsc",
+    "cxx_flags_config": "/O2 /Ob2 /DNDEBUG",
+    "target_warning_flags": "/W4 /permissive-",
+    "generator": "Visual Studio 17 2022",
+    "system": "Windows 10.0.26200 AMD64",
+    "ndebug": true,
+    "heap_tracking": false,
+    "cgal_available": true,
+    "cgal_version": "6.1.2",
+    "boost_version": "1_88",
+    "clock": "std::chrono::steady_clock",
+    "clock_is_steady": true,
+    "clock_period_ns": 1,
+    "clock_observed_resolution_ns": 100
+  },
+  "solvers": {
+    "mcds_bench": {
+      "path": "B:\\repo\\MCDS\\cpp\\build-msvc\\Release\\mcds_bench.exe",
+      "sha256": "a4e7d7b3acd9310948ee1372945058582dbdfd4a660f645fa1c1496bb1739d67"
+    }
+  },
+  "cgal": {
+    "available": true,
+    "version": "6.1.2",
+    "boost_version": "1_88",
+    "data_structure": "CGAL::Kd_tree + CGAL::Fuzzy_sphere radial search (dD Spatial Searching) with radius r(1+1e-9)+8eps(|x|+|y|+r); exact predicate distanceSquared <= r^2 decides adjacency"
+  },
+  "git": {
+    "commit": "4e03a2cede63712cd7b6bea04af8808f7ff66fae",
+    "branch": "main",
+    "describe": "v1.0-experiments-14-g4e03a2c",
+    "dirty": false,
+    "dirty_files": []
+  },
+  "sources": {
+    "algorithms": {
+      "marathe": "0901b386b26bb3c221530c6d022487ecd1f37b3b0526e6e1a9047ef469d9b54b",
+      "wan": "2da663b7ba163d85002ec0dd027fd5c3f745ba97f3a064983377e16635f0bbb7",
+      "funke": "7c9529a137cd356e1f28e15b3290b8e71f50da473eafe4eaba52785b9af30441",
+      "li": "cccb02255b2a6c8f340dbe84a4892c6b4ec2230e066f85c84e086ece43475134"
+    },
+    "shared": {
+      "cpp/src/GridSpatialIndex.cpp": "8759d1362356654637256b04989c178205b2248442cf27112f66b4b85b92622a",
+      "cpp/include/GridSpatialIndex.hpp": "4e0eb70496f9c13df7cc72ffb3c0d660caae59d310f528a062c3a4a1a8c9a5ba",
+      "cpp/include/SpatialIndex.hpp": "4ceaf7bd217dd49c02a21c9dccbcb03e3cc6400a35ee1b44addb82ed67a5b965",
+      "cpp/src/Validator.cpp": "432c316041c3fca3dd3c85e795577ef0ef1e29f0dc2eacf82e887d053dec7698",
+      "cpp/src/Connectivity.cpp": "b0b09f9f0e6841246bf40ba8a76efd01648d2b093bbb66abad3fd0feaef780c2",
+      "cpp/src/CsvIO.cpp": "a0a997dab9aee23b65c2934590dcc7d781d929f36a97d0710aa1097371f8d7c1",
+      "cpp/src/PointSet.cpp": "3c70144c854076952d4d0f28eb883dcc75627dc802a8150c84db4166acf0cf40",
+      "python/generators.py": "795441e97843c39f9aadc53ac964bfc53e4e6c1bb05c1702c96f9fdb8a5ef9a5"
+    }
+  },
+  "machine_id": "m_97e83c29d2633221"
+}

@@ -1,0 +1,33 @@
+{
+  "passed": true,
+  "violations": [],
+  "warnings": [],
+  "graphs_with_rows": 1560,
+  "graph_backend_pairs_complete_for_all_algorithms": 1560,
+  "execution_position_balance": {
+    "funke": {
+      "0": 390,
+      "1": 390,
+      "2": 390,
+      "3": 390
+    },
+    "li": {
+      "0": 390,
+      "1": 390,
+      "2": 390,
+      "3": 390
+    },
+    "marathe": {
+      "0": 390,
+      "1": 390,
+      "2": 390,
+      "3": 390
+    },
+    "wan": {
+      "0": 390,
+      "1": 390,
+      "2": 390,
+      "3": 390
+    }
+  }
+}
