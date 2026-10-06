@@ -9,7 +9,7 @@ Bump ``SCHEMA_VERSION`` whenever a column is added, removed or redefined.
 
 from __future__ import annotations
 
-SCHEMA_VERSION = "mcds-results-2"
+SCHEMA_VERSION = "mcds-results-3"
 
 # Execution phases. Only TIMED rows enter runtime statistics.
 PHASE_WARMUP = "warmup"
@@ -53,7 +53,8 @@ RAW_RUN_COLUMNS = [
     "spatial_index_name",
     "t_spatial_index_ms",
     "index_bytes",
-    "index_heap_peak_bytes",
+    "index_build_peak_bytes",
+    "final_representation_bytes",
     "backend_crosscheck",
     # execution
     "phase",
@@ -78,13 +79,14 @@ RAW_RUN_COLUMNS = [
     "grid_avg_candidates_per_query",
     "grid_cells_examined",
     "grid_max_candidates_per_query",
-    "cgal_box_candidates",
+    "cgal_range_candidates",
     "cgal_exact_distance_evaluations",
-    "cgal_max_box_candidates_per_query",
+    "cgal_max_range_candidates_per_query",
     "max_neighbors_per_query",
     "query_time_ns",
     # memory (memory_probe rows only)
-    "heap_peak_additional_bytes",
+    "algorithm_incremental_peak_bytes",
+    "pipeline_peak_bytes",
     "heap_allocation_count",
     "heap_allocated_bytes",
     "rss_before_algorithm_bytes",
@@ -154,6 +156,8 @@ DATASET_COLUMNS = [
     "index_bytes",
     "dataset_bytes",
     "edges",
+    "explicit_csr_bytes_estimate",
+    "explicit_bitmatrix_bytes_estimate",
     "mean_degree",
     "min_degree",
     "max_degree",
@@ -196,16 +200,26 @@ GENERATION_ATTEMPT_COLUMNS = [
 # specific diagnostics are never compared across backends.
 METRIC_TAXONOMY = {
     "primary": ["valid_solution", "t_algorithm_ms", "cds_size", "cds_fraction"],
-    "secondary": ["heap_peak_additional_bytes", "t_spatial_index_ms", "neighbor_queries", "neighbors_returned",
+    # Memory (memory-probe rows; one common baseline H0 = live heap just before
+    # the representation build, see experimental_methodology.md):
+    #   index_build_peak_bytes           extra heap needed at any point while building the representation
+    #   final_representation_bytes       representation footprint retained after the build
+    #   algorithm_incremental_peak_bytes extra heap above the solve()-entry level during the algorithm
+    #   pipeline_peak_bytes              max end-to-end heap increase above H0 (build + algorithm)
+    "secondary": ["algorithm_incremental_peak_bytes", "final_representation_bytes", "index_build_peak_bytes",
+                  "pipeline_peak_bytes", "t_spatial_index_ms", "neighbor_queries", "neighbors_returned",
                   "cds_diameter", "empirical_ratio"],
     "diagnostic": ["core_count", "connector_count", "domination_valid", "connectivity_valid", "undominated_count",
                    "max_neighbors_per_query", "query_time_ns"],
     # Each is defined for one backend only and is never compared across backends.
     "backend_specific_diagnostic": ["grid_candidates_examined", "grid_distance_computations",
                                     "grid_avg_candidates_per_query", "grid_cells_examined",
-                                    "grid_max_candidates_per_query", "cgal_box_candidates",
-                                    "cgal_exact_distance_evaluations", "cgal_max_box_candidates_per_query",
-                                    "index_bytes", "index_heap_peak_bytes"],
+                                    "grid_max_candidates_per_query", "cgal_range_candidates",
+                                    "cgal_exact_distance_evaluations", "cgal_max_range_candidates_per_query",
+                                    "index_bytes"],
+    # Count-only analytical estimates (datasets.csv): what an explicit graph WOULD
+    # occupy, from |E| counted by streaming radius queries. No graph is built.
+    "analytical_estimate": ["explicit_csr_bytes_estimate", "explicit_bitmatrix_bytes_estimate"],
 }
 
 FAILURE_COLUMNS = [

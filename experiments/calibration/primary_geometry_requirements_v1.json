@@ -1,0 +1,33 @@
+{
+  "name": "Primary-geometry requirements v1 (scale stability, density response, bottleneck character)",
+  "recorded_utc": "2026-10-06T12:40:00Z",
+  "recorded_utc_correction": {
+    "original_recorded_utc": "2026-10-06T12:40:00Z",
+    "correction": "The recorded_utc value above was entered manually and is incorrect. It is kept unchanged for provenance.",
+    "actual_ordering": "File written ~2026-10-06T12:09:00Z, before generator_calibration_v1 finished (12:10:44Z), before any dumbbell candidate was proposed (12:11:51Z) or defined (12:12:20Z), and before the first v2 calibration output (12:23:10Z). Evidence: file modification times and the session transcript.",
+    "added_utc": "2026-10-06 (after the v2 calibration; this note changes no rule)"
+  },
+  "disclosure": "Recorded before viewing generator_calibration_v1 beyond cluster_bridge n <= 2000 and before any calibration of candidate redesigns. Already seen and stated when proposing these rules: v1 cluster_bridge fails R1 and R2 on n <= 2000; v1 D3 is expected to fail R2 for a stated mathematical reason (fixed sigma, n/8 points per hotspot).",
+  "principle": "A geometry in the balanced primary factorial must respond meaningfully to the declared density parameter and must preserve a broadly comparable local-degree regime as n changes (owner's statement). Literature direction (to verify against full text): keep the thermodynamic regime (finite mean degree) by growing the spatial domain with n rather than crowding fixed regions.",
+  "applies_to": "every geometry proposed for the primary factorial (sizes 500, 1000, 2000, 5000, 10000; densities 8, 12), in addition to gates_v1 G1 (and G2/G3 for the clustered geometry)",
+  "requirements": {
+    "R1_density_response": {
+      "rule": "at every n: median mean degree at density 12 / at density 8 >= 1.25",
+      "min_ratio": 1.25,
+      "reference": "uniform ~ 1.5 (degree proportional to density)"
+    },
+    "R2_scale_stability": {
+      "rule": "within each density: max_n / min_n of the median mean degree <= 2 over all tested n",
+      "max_spread": 2.0,
+      "reference": "uniform ~ 1.1 (boundary effects only)"
+    },
+    "R3_bottleneck_character": {
+      "applies_to": "the bottleneck geometry (dumbbell / cluster_bridge successor) only",
+      "rule": "corridor width <= r (=1) and the corridor holds < 10% of the points at every n",
+      "max_corridor_width": 1.0,
+      "max_corridor_point_share": 0.1,
+      "wording_provenance": "The locked rule is 'corridor width <= r' (max_corridor_width 1.0, inclusive), as written in this file at ~12:09:00Z. Three minutes earlier (12:05:45Z) the assistant had proposed 'bridge strip width < r' (strict) in discussion; the change to <= was made by the assistant when recording the requirements and was not flagged as a change. The single dumbbell candidate (w = 1.0, l = 3.0) was chosen afterwards by the assistant from two proposed candidates. w = 1.0 lies exactly on the bound: under the strict wording the dumbbell would have failed R3. The project owner directed that the rule as locked before calibration governs; it is applied unchanged."
+    }
+  },
+  "decision_rule": "A candidate that meets G1 and R1-R3 (and, for clustered, G2/G3) may replace the v1 generator; among passing candidates, prefer the one closest to the owner's stated design intent, decided before final data. If no bottleneck candidate passes, cluster_bridge leaves the primary factorial and becomes a separate bottleneck stress-test study. Requirements are never loosened after viewing results; candidates are calibrated on new independent validation seeds."
+}

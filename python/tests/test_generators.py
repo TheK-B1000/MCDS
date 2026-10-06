@@ -96,6 +96,37 @@ class GeometricPropertyTests(unittest.TestCase):
         self.assertEqual(len(result.centers), 5)
         self.assertEqual(result.parameters["clusters"], 5)
 
+    def test_clustered_background_zero_is_the_previous_blob_construction(self) -> None:
+        import random
+        res = generate("clustered", n=300, seed=21, density=5.0, clusters=4, spread=0.8, background_fraction=0.0)
+        rng = random.Random(21)
+        w = h = (300 / 5.0) ** 0.5
+        centers = [(rng.uniform(0.0, w), rng.uniform(0.0, h)) for _ in range(4)]
+        expected = [(centers[i % 4][0] + rng.gauss(0.0, 0.8), centers[i % 4][1] + rng.gauss(0.0, 0.8))
+                    for i in range(300)]
+        self.assertEqual(res.points, expected)
+
+    def test_clustered_hotspots_on_uniform_background(self) -> None:
+        import random
+        res = generate("clustered", n=1000, seed=3, density=8.0, clusters=4, spread=0.8, background_fraction=0.5)
+        self.assertEqual(res.parameters["background_fraction"], 0.5)
+        self.assertEqual(len(res.points), 1000)
+        w, h = res.parameters["width"], res.parameters["height"]
+        # Reproduce the defined draw order: centres, 500 background, 500 hotspot points.
+        rng = random.Random(3)
+        centers = [(rng.uniform(0.0, w), rng.uniform(0.0, h)) for _ in range(4)]
+        background = [(rng.uniform(0.0, w), rng.uniform(0.0, h)) for _ in range(500)]
+        self.assertEqual(res.centers, centers)
+        self.assertEqual(res.points[:500], background)
+        self.assertTrue(all(0.0 <= x <= w and 0.0 <= y <= h for x, y in res.points[:500]))
+        self.assertEqual(generate("clustered", n=1000, seed=3, density=8.0, clusters=4, spread=0.8).points,
+                         res.points)  # 0.5 is the default; deterministic
+
+    def test_clustered_rejects_bad_background_fraction(self) -> None:
+        for bad in (-0.1, 1.0, 1.5):
+            with self.assertRaises(ValueError):
+                generate("clustered", n=50, seed=1, background_fraction=bad)
+
     def test_perturbed_grid_points_stay_near_base_positions(self) -> None:
         result = generate("perturbed_grid", n=100, seed=5, spacing=1.0, jitter=0.2)
         self.assertIsNotNone(result.base_positions)
@@ -124,6 +155,41 @@ class GeometricPropertyTests(unittest.TestCase):
         xs = [c[0] for c in result.centers]
         gaps = [xs[i + 1] - xs[i] for i in range(len(xs) - 1)]
         self.assertTrue(all(abs(g - gaps[0]) < 1e-9 for g in gaps))
+
+
+class FrozenV2GeneratorTests(unittest.TestCase):
+    """Generators frozen by experiments/calibration/generator_freeze_v2.json."""
+
+    def test_d3_v2_points_stay_in_window_and_sigma_scales_with_side(self) -> None:
+        for n, density in ((500, 8.0), (5000, 12.0)):
+            g = generate("clustered", n, 3, density=density, clusters=4, background_fraction=0.5,
+                         spread_relative=0.05)
+            side = math.sqrt(n / density)
+            self.assertAlmostEqual(g.parameters["width"], side, places=9)
+            self.assertTrue(all(0.0 <= x <= side and 0.0 <= y <= side for x, y in g.points))
+            self.assertEqual(g.parameters["spread_relative"], 0.05)
+
+    def test_d3_v2_rejects_nonpositive_spread_relative(self) -> None:
+        with self.assertRaises(ValueError):
+            generate("clustered", 100, 1, density=8.0, spread_relative=0.0)
+
+    def test_dumbbell_domain_area_and_neck(self) -> None:
+        for n, density in ((500, 8.0), (10000, 12.0)):
+            g = generate("dumbbell", n, 5, density=density, neck_width=1.0, neck_length=3.0)
+            a = g.parameters["square_side"]
+            self.assertAlmostEqual(2 * a * a + 3.0, n / density, places=9)  # total area n / density
+            self.assertEqual(len(g.points), n)
+            self.assertEqual(g.parameters["neck_points"], round(n * 3.0 / (n / density)))
+            self.assertLess(g.parameters["neck_share"], 0.10)
+            y0 = a / 2 - 0.5
+            in_neck = [p for p in g.points if a < p[0] < a + 3.0]
+            self.assertEqual(len(in_neck), g.parameters["neck_points"])
+            self.assertTrue(all(y0 <= y <= y0 + 1.0 for _x, y in in_neck))
+            self.assertTrue(all(0 <= x <= 2 * a + 3.0 and 0 <= y <= a for x, y in g.points))
+
+    def test_dumbbell_rejects_domain_smaller_than_neck(self) -> None:
+        with self.assertRaises(ValueError):
+            generate("dumbbell", 10, 1, density=8.0, neck_width=1.0, neck_length=3.0)
 
 
 class CliSmokeTests(unittest.TestCase):

@@ -1,0 +1,96 @@
+{
+  "study_id": "sparse_density5",
+  "study_seed": 20261201,
+  "description": "Optional SEPARATE sparse study at density 5 (never pooled with the primary {8, 12} factorial). Cells are admitted mechanically by the preregistered sparse-admission gate (gates_v1 sparse_admission: >= 18/24 connected in calibration, min_acceptance_rate 0.75), each geometry judged by the calibration of its own generator revision: uniform and dumbbell by generator_calibration_v2 (seed 20261107); clustered (D3-v2, s = 0.05) by the s = 0.05 v2 file; perturbed_grid and corridor (generators unchanged since v1; reproduction check 48/48 identical graphs) by generator_calibration_v1 (seed 20261006). Expected admission: uniform, dumbbell, perturbed_grid at every n; corridor at n <= 2000; clustered at no n. Replicate count follows the final study's choice.",
+  "algorithms": [
+    "marathe",
+    "wan",
+    "funke",
+    "li"
+  ],
+  "spatial_backend": "cgal",
+  "synthetic": {
+    "geometries": [
+      "uniform",
+      "clustered",
+      "perturbed_grid",
+      "corridor",
+      "dumbbell"
+    ],
+    "sizes": [
+      500,
+      1000,
+      2000,
+      5000,
+      10000
+    ],
+    "densities": [
+      5.0
+    ],
+    "radius": 1.0,
+    "replicates": 20,
+    "geometry_parameters": {
+      "clustered": {
+        "clusters": 4,
+        "background_fraction": 0.5,
+        "spread_relative": 0.05
+      },
+      "corridor": {
+        "corridor_width": 3.0
+      },
+      "dumbbell": {
+        "neck_width": 1.0,
+        "neck_length": 3.0
+      },
+      "perturbed_grid": {
+        "jitter": 0.15
+      }
+    }
+  },
+  "feasibility_calibration": [
+    {
+      "file": "experiments/calibration/generator_calibration_v2_cal_v2_uniform_dumbbell_s0025.json",
+      "sha256": "17cc7aadb50d896bfe98492d1dce63e2c503c5d157d5dde59b00458fe49882df",
+      "min_acceptance_rate": 0.75,
+      "geometries": [
+        "uniform",
+        "dumbbell"
+      ]
+    },
+    {
+      "file": "experiments/calibration/generator_calibration_v2_cal_v2_s005.json",
+      "sha256": "db91940f257d22a5b0eb859de0cd500c17ed86ba620efcb2fe6bc2cceb8991b5",
+      "min_acceptance_rate": 0.75,
+      "geometries": [
+        "clustered"
+      ]
+    },
+    {
+      "file": "experiments/calibration/generator_calibration_v1.json",
+      "sha256": "509b0443cf16e7e96e2ab3cc99a3a4f1e97e51b50918b92c2d513ca609491d7c",
+      "min_acceptance_rate": 0.75,
+      "geometries": [
+        "perturbed_grid",
+        "corridor"
+      ]
+    }
+  ],
+  "connectivity_rule": {
+    "mode": "resample_until_connected",
+    "max_attempts": 80
+  },
+  "timing": {
+    "repetitions": 5,
+    "warmups": 1,
+    "instrumentation": "none",
+    "process_mode": "shared",
+    "validate": "all",
+    "timeout_seconds": 3600
+  },
+  "memory_probe": true,
+  "counter_pass": "basic",
+  "exact": {
+    "max_n": 0,
+    "timeout_seconds": 600
+  }
+}

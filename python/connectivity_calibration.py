@@ -1,150 +1,188 @@
-"""Connectivity-only calibration for choosing study densities.
+"""Generator calibration: connectivity acceptance, clustering and degree per cell.
 
-Measures how often each generator produces a connected UDG at a given
-density — one fresh sample per seed, no connectivity retries. Use this to
-pick a common low-density level that keeps the primary study matrix complete.
+Preregistered evidence for the generator parameters and for which cells a
+study may contain. For every (geometry, n, density) cell it draws graphs on
+INDEPENDENT validation seeds (SHA-256 namespace "calibration", disjoint from
+every study's graph seeds), probes each with the solver's implicit graph-only
+mode (no graph is ever stored), and records:
 
-Example:
+* connectivity acceptance rate (+ Wilson 95% CI),
+* clustering share distribution (fraction of points in the densest 10% of the
+  r-sized grid cells covering the bounding box; higher = more clustered),
+* observed degree statistics (mean / median / min / max / SD per graph),
+* median nearest-neighbour distance (grid search over the points; nothing stored
+  but O(n) buckets),
 
-    py -3 python/connectivity_calibration.py \\
-        --distributions clustered,corridor \\
-        --n 2000 --densities 3,3.5,4,4.5,5 --seeds 20
+and compares each geometry's clustering share with uniform at the same
+(n, density).
+
+    py -3 python/connectivity_calibration.py --from-config experiments/final.json \\
+        --densities 5,8,12 --seeds 24 --output experiments/calibration/generator_calibration_v1.json
 """
 
 from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
+import math
+import statistics
 import sys
 import tempfile
-from collections import defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _PYTHON_DIR = Path(__file__).resolve().parent
-for path in (_REPO_ROOT, _PYTHON_DIR):
-    if str(path) not in sys.path:
-        sys.path.insert(0, str(path))
+if str(_PYTHON_DIR) not in sys.path:
+    sys.path.insert(0, str(_PYTHON_DIR))
 
-from study.bench import find_binary, run_bench  # noqa: E402
 from generators import generate, write_csv  # noqa: E402
-from gui_support import find_repo_root  # noqa: E402
+from study import config as config_mod  # noqa: E402
+from study.analysis import quantile, wilson  # noqa: E402
+from study.bench import find_binary, run_bench  # noqa: E402
+from study.seeds import derive_seed  # noqa: E402
 
-DEFAULT_PARAMS = {
-    "clustered": {"clusters": 4, "spread": 0.8},
-    "corridor": {"corridor_width": 3.0},
-    "cluster_bridge": {"clusters": 3, "spread": 0.45, "bridge_fraction": 0.2, "bridge_width": 0.6},
-    "perturbed_grid": {"jitter": 0.15},
-    "uniform": {},
-}
+CLUSTER_TOP_FRACTION = 0.10
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--distributions", default="clustered,corridor")
-    parser.add_argument("--n", type=int, default=2000)
-    parser.add_argument("--densities", default="3,3.5,4,4.5,5")
-    parser.add_argument("--seeds", type=int, default=20, help="Number of independent seeds (1..N)")
-    parser.add_argument("--spatial-backend", default="cgal", choices=["cgal", "grid"],
-                        help="spatial backend for the connectivity probe (default: cgal, the study backend)")
-    parser.add_argument("--radius", type=float, default=1.0)
-    parser.add_argument(
-        "--out-dir",
-        default="results/studies/connectivity_calibration",
-        help="Directory for CSV + summary JSON",
-    )
-    args = parser.parse_args()
+def clustering_share(points: list[tuple[float, float]], cell: float) -> float:
+    """Share of points in the densest 10% of the cell-size grid over the bbox."""
+    counts: dict[tuple[int, int], int] = {}
+    for x, y in points:
+        key = (math.floor(x / cell), math.floor(y / cell))
+        counts[key] = counts.get(key, 0) + 1
+    xs = [p[0] for p in points]
+    ys = [p[1] for p in points]
+    nx = math.floor(max(xs) / cell) - math.floor(min(xs) / cell) + 1
+    ny = math.floor(max(ys) / cell) - math.floor(min(ys) / cell) + 1
+    top = max(1, int(CLUSTER_TOP_FRACTION * nx * ny))
+    return sum(sorted(counts.values(), reverse=True)[:top]) / len(points)
 
-    distributions = [x.strip() for x in args.distributions.split(",") if x.strip()]
-    densities = [float(x) for x in args.densities.split(",") if x.strip()]
-    seeds = list(range(1, int(args.seeds) + 1))
-    n = int(args.n)
 
-    repo = find_repo_root()
-    exe = find_binary(repo, "mcds_bench")
-    out_dir = (repo / args.out_dir).resolve()
-    out_dir.mkdir(parents=True, exist_ok=True)
-    csv_path = out_dir / "connectivity_rates.csv"
-    json_path = out_dir / "connectivity_rates.json"
+def median_nearest_neighbour_distance(points: list[tuple[float, float]], cell: float) -> float:
+    """Median over points of the distance to the nearest other point (grid search)."""
+    buckets: dict[tuple[int, int], list[int]] = {}
+    for i, (x, y) in enumerate(points):
+        buckets.setdefault((math.floor(x / cell), math.floor(y / cell)), []).append(i)
+    dists = []
+    for i, (x, y) in enumerate(points):
+        gx, gy = math.floor(x / cell), math.floor(y / cell)
+        best = math.inf
+        ring = 1
+        while True:
+            for dx in range(-ring, ring + 1):
+                for dy in range(-ring, ring + 1):
+                    for j in buckets.get((gx + dx, gy + dy), ()):
+                        if j != i:
+                            d2 = (points[j][0] - x) ** 2 + (points[j][1] - y) ** 2
+                            if d2 < best:
+                                best = d2
+            # Any point outside the scanned rings is farther than ring * cell.
+            if best <= (ring * cell) ** 2 or ring > 64:
+                break
+            ring += 1
+        dists.append(math.sqrt(best))
+    return statistics.median(dists)
 
-    rows: list[dict[str, object]] = []
-    counts: dict[tuple[str, float], list[bool]] = defaultdict(list)
 
-    with tempfile.TemporaryDirectory(prefix="mcds_conn_cal_") as tmp:
-        tmp_dir = Path(tmp)
-        total = len(distributions) * len(densities) * len(seeds)
-        done = 0
-        for dist in distributions:
-            extra = dict(DEFAULT_PARAMS.get(dist, {}))
-            for density in densities:
-                for seed in seeds:
-                    done += 1
-                    gen = generate(dist, n, seed, density=density, **extra)
-                    points_path = tmp_dir / f"{dist}_d{density}_s{seed}.csv"
-                    write_csv(str(points_path), gen.points)
-                    probe = run_bench(exe, points_path, args.radius, spatial_backend=args.spatial_backend, graph_only=True,
-                                      timeout_s=600)
-                    graph = probe.data["graph"] if probe.ok and probe.data else None
-                    connected = bool(graph and graph["connected"])
-                    error = probe.error
-                    comps = None if graph is None else graph["component_count"]
-                    row = {
-                        "distribution": dist,
-                        "n": n,
-                        "density": density,
-                        "seed": seed,
-                        "connected": connected,
-                        "component_count": comps,
-                        "error": error or "",
-                    }
-                    rows.append(row)
-                    counts[(dist, density)].append(bool(connected))
-                    flag = "Y" if connected else "N"
-                    print(
-                        f"[{done}/{total}] {dist:15} dens={density:<4} seed={seed:2} "
-                        f"connected={flag} comps={comps}",
-                        flush=True,
-                    )
+def _summary(xs: list[float]) -> dict[str, float]:
+    s = sorted(xs)
+    return {"median": statistics.median(s), "q1": quantile(s, 0.25), "q3": quantile(s, 0.75),
+            "min": s[0], "max": s[-1], "mean": statistics.fmean(s)}
 
-    fieldnames = ["distribution", "n", "density", "seed", "connected", "component_count", "error"]
-    with csv_path.open("w", encoding="utf-8", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(rows)
 
-    summary: dict[str, dict[str, dict[str, float | int]]] = {}
-    print("\nConnectivity rate (connected / seeds):\n")
-    header = f"{'distribution':16}" + "".join(f"{d:>8}" for d in densities)
-    print(header)
-    print("-" * len(header))
-    for dist in distributions:
-        summary[dist] = {}
-        line = f"{dist:16}"
-        for density in densities:
-            samples = counts[(dist, density)]
-            rate = sum(samples) / len(samples) if samples else 0.0
-            summary[dist][str(density)] = {
-                "connected": sum(samples),
-                "trials": len(samples),
-                "rate": round(rate, 4),
-            }
-            line += f"{100.0 * rate:7.1f}%"
-        print(line)
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--from-config", required=True, help="study config providing geometries, sizes, radius, parameters")
+    ap.add_argument("--densities", default=None, help="override densities (comma list)")
+    ap.add_argument("--sizes", default=None, help="override sizes (comma list)")
+    ap.add_argument("--seeds", type=int, default=24, help="validation graphs per cell")
+    ap.add_argument("--calibration-seed", type=int, default=20261006)
+    ap.add_argument("--spatial-backend", default="cgal", choices=["cgal", "grid"])
+    ap.add_argument("--output", required=True)
+    args = ap.parse_args(argv)
 
-    payload = {
-        "n": n,
-        "seeds": seeds,
-        "densities": densities,
-        "distributions": distributions,
-        "radius": args.radius,
-        "note": "One generation per seed; no connectivity retries.",
-        "rates": summary,
-        "csv": str(csv_path),
+    cfg = config_mod.load(Path(args.from_config))
+    syn = cfg["synthetic"]
+    densities = [float(x) for x in args.densities.split(",")] if args.densities else [float(d) for d in syn["densities"]]
+    sizes = [int(x) for x in args.sizes.split(",")] if args.sizes else [int(n) for n in syn["sizes"]]
+    radius = float(syn["radius"])
+    geometries = list(syn["geometries"])
+    exe = find_binary(_REPO_ROOT, "mcds_bench")
+
+    per_graph: list[dict] = []
+    cells: list[dict] = []
+    with tempfile.TemporaryDirectory(prefix="mcds_calib_") as tmp:
+        csv_path = Path(tmp) / "g.csv"
+        for geometry in geometries:
+            params = dict(syn["geometry_parameters"].get(geometry, {}))
+            for n in sizes:
+                for density in densities:
+                    rows = []
+                    for k in range(args.seeds):
+                        seed = derive_seed("calibration", args.calibration_seed, geometry, n, density, radius, k)
+                        pts = generate(geometry, n, seed, density=density, **params).points
+                        write_csv(str(csv_path), pts)
+                        probe = run_bench(exe, csv_path, radius, spatial_backend=args.spatial_backend,
+                                          graph_only=True, timeout_s=3600)
+                        if not probe.ok or probe.data is None:
+                            raise RuntimeError(f"probe failed: {geometry} n={n} d={density} k={k}: {probe.error}")
+                        g = probe.data["graph"]
+                        row = {"geometry": geometry, "n": n, "density": density, "replicate": k, "seed": seed,
+                               "connected": bool(g["connected"]), "components": g["component_count"],
+                               "mean_degree": g["mean_degree"], "median_degree": g["median_degree"],
+                               "min_degree": g["min_degree"], "max_degree": g["max_degree"],
+                               "degree_std": g["degree_std"],
+                               "clustering_share": clustering_share(pts, radius),
+                               "median_nn_distance": median_nearest_neighbour_distance(pts, radius / 4.0),
+                               "backend_crosscheck": probe.data["backend_crosscheck"]["status"]}
+                        rows.append(row)
+                        per_graph.append(row)
+                    ok = sum(r["connected"] for r in rows)
+                    lo, hi = wilson(ok, len(rows))
+                    cell = {"geometry": geometry, "n": n, "density": density, "radius": radius,
+                            "graphs": len(rows), "connected": ok, "acceptance_rate": ok / len(rows),
+                            "acceptance_wilson_low": lo, "acceptance_wilson_high": hi,
+                            "clustering_share": _summary([r["clustering_share"] for r in rows]),
+                            "mean_degree": _summary([r["mean_degree"] for r in rows]),
+                            "median_degree": _summary([r["median_degree"] for r in rows]),
+                            "min_degree": _summary([r["min_degree"] for r in rows]),
+                            "max_degree": _summary([r["max_degree"] for r in rows]),
+                            "degree_std": _summary([r["degree_std"] for r in rows]),
+                            "median_nn_distance": _summary([r["median_nn_distance"] for r in rows])}
+                    cells.append(cell)
+                    print(f"{geometry:15} n={n:<6} d={density:<5} connected {ok:2d}/{len(rows)} "
+                          f"clustering median {cell['clustering_share']['median']:.3f} "
+                          f"mean degree {cell['mean_degree']['median']:.1f} "
+                          f"NN dist {cell['median_nn_distance']['median']:.3f}", flush=True)
+
+    uniform = {(c["n"], c["density"]): c["clustering_share"]["median"] for c in cells if c["geometry"] == "uniform"}
+    for c in cells:
+        ref = uniform.get((c["n"], c["density"]))
+        c["clustering_vs_uniform_ratio"] = (c["clustering_share"]["median"] / ref) if ref else None
+
+    out = Path(args.output)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    doc = {
+        "created_utc": datetime.now(timezone.utc).isoformat(),
+        "source_config": args.from_config,
+        "source_config_sha256": config_mod.config_sha256(cfg),
+        "generator_sha256": hashlib.sha256((_PYTHON_DIR / "generators.py").read_bytes()).hexdigest(),
+        "calibration_seed": args.calibration_seed,
+        "seed_namespace": "sha256('calibration', calibration_seed, geometry, n, density, radius, k); "
+                          "disjoint from study seeds",
+        "spatial_backend": args.spatial_backend,
+        "clustering_share_definition": "fraction of points in the densest 10% of r-sized grid cells over the bounding box",
+        "cells": cells,
     }
-    json_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-    print(f"\nwrote {csv_path}")
-    print(f"wrote {json_path}")
+    out.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
+    with out.with_suffix(".graphs.csv").open("w", encoding="utf-8", newline="") as h:
+        w = csv.DictWriter(h, fieldnames=list(per_graph[0].keys()))
+        w.writeheader()
+        w.writerows(per_graph)
+    print(f"wrote {out} ({len(cells)} cells, {len(per_graph)} graphs)")
     return 0
 
 

@@ -1,7 +1,7 @@
 {
   "study_id": "precision_pilot",
   "study_seed": 20261010,
-  "description": "Precision pilot: justifies the final replicate count. Representative cells (all five geometries, two sizes, middle density) with 40 independent graphs each; read precision_curve.csv (CI half-width of paired differences vs k graphs). Pilot outcomes may inform the protocol; final outcomes may not.",
+  "description": "Clean precision pilot: selects the final replicate count mechanically under the rule locked in experiments/precision/replicate_rule_v1.json (python/replicate_decision.py), before any final data. All five primary geometries x n in {500, 2000, 10000} x both primary densities {8, 12} (never pooled), 52 independent graphs per cell (ladder 20/28/36/44/52, each a multiple of 4 so Williams positions are exactly balanced at every prefix). Measurement protocol identical to the final study (CGAL, Williams order, 5 timed repetitions + 1 warmup). Run under the machine-preparation checklist. Pilot outcomes may inform the protocol; final outcomes may not.",
   "algorithms": [
     "marathe",
     "wan",
@@ -15,30 +15,31 @@
       "clustered",
       "perturbed_grid",
       "corridor",
-      "cluster_bridge"
+      "dumbbell"
     ],
     "sizes": [
-      1000,
-      5000
+      500,
+      2000,
+      10000
     ],
     "densities": [
-      8.0
+      8.0,
+      12.0
     ],
     "radius": 1.0,
-    "replicates": 40,
+    "replicates": 52,
     "geometry_parameters": {
       "clustered": {
         "clusters": 4,
-        "spread": 0.8
+        "background_fraction": 0.5,
+        "spread_relative": 0.05
       },
       "corridor": {
         "corridor_width": 3.0
       },
-      "cluster_bridge": {
-        "clusters": 3,
-        "spread": 0.45,
-        "bridge_fraction": 0.2,
-        "bridge_width": 0.6
+      "dumbbell": {
+        "neck_width": 1.0,
+        "neck_length": 3.0
       },
       "perturbed_grid": {
         "jitter": 0.15
@@ -50,12 +51,12 @@
     "max_attempts": 80
   },
   "timing": {
-    "repetitions": 3,
+    "repetitions": 5,
     "warmups": 1,
     "instrumentation": "none",
     "process_mode": "shared",
     "validate": "all",
-    "timeout_seconds": 1800
+    "timeout_seconds": 3600
   },
   "memory_probe": false,
   "counter_pass": null,

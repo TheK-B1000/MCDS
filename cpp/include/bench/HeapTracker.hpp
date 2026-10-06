@@ -21,6 +21,7 @@ struct HeapSnapshot {
     std::uint64_t peakBytes = 0;       // maximum of currentBytes since last resetPeak
     std::uint64_t allocationCount = 0; // calls to operator new since last resetPeak
     std::uint64_t allocatedBytes = 0;  // bytes requested since last resetPeak
+    std::uint64_t lifetimePeakBytes = 0;  // max live bytes over the whole process (never reset)
 };
 
 HeapSnapshot heapSnapshot();

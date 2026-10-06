@@ -1,0 +1,40 @@
+{
+  "name": "Generator freeze v2 (mechanical outcome of the locked v2 calibration)",
+  "decided_utc": "2026-10-06T12:39:58Z",
+  "decision_tool": "python/calibration_v2_decision.py (output unedited in generator_calibration_v2_decision.txt)",
+  "clustered": {
+    "selected": "D3-v2",
+    "spread_relative": 0.05,
+    "clusters": 4,
+    "background_fraction": 0.5,
+    "ladder_outcome": {
+      "0.025": "fails G3, R1, R2",
+      "0.035": "fails G3, R1, R2",
+      "0.05": "passes G1, G2, G3, R1, R2"
+    },
+    "selection_rule": "highest minimum G2 ratio among passing ladder values (only 0.05 passed)"
+  },
+  "bottleneck": {
+    "selected": "dumbbell",
+    "neck_width": 1.0,
+    "neck_length": 3.0,
+    "verdict": "passes G1, R1, R2, R3 on its single allowed calibration; replaces cluster_bridge in the primary factorial",
+    "r3_note": "w = 1.0 meets the locked inclusive bound (<= r) exactly; see primary_geometry_requirements_v1.json R3 wording_provenance"
+  },
+  "retained_unchanged": "D3 v1 (absolute spread, no window restriction) and cluster_bridge v1 generators remain in python/generators.py as rejected pre-freeze designs for regression; they are not used by any study config",
+  "sparse_density5": "separate study experiments/sparse_density5.json; admission per geometry from the calibration of its own generator revision (>= 18/24): uniform, dumbbell, perturbed_grid at every n; corridor at n <= 2000; clustered at no n",
+  "primary_densities": [
+    8.0,
+    12.0
+  ],
+  "inputs_sha256": {
+    "gates_v1.json": "a3ca426cb39a2a65cb56776a5a98c77ffefb9c80d73f1f92cb22e6f02dca78f3",
+    "primary_geometry_requirements_v1.json": "32e3f52eb446eb38223764a80a579d25d3f161269ef2d8c84bebd844e795ea0e",
+    "generator_definitions_v2.json": "68ecfa5c719b1ecc9f1a1e816c1e15af2ae12a1439707c4ca2773b81dc11d4b2",
+    "generator_calibration_v2_cal_v2_uniform_dumbbell_s0025.json": "17cc7aadb50d896bfe98492d1dce63e2c503c5d157d5dde59b00458fe49882df",
+    "generator_calibration_v2_cal_v2_s0035.json": "bae49f96c5a91b7ed5cb3d8a2794dcb3762852ce026d110c1b7e0e17c225bdd6",
+    "generator_calibration_v2_cal_v2_s005.json": "db91940f257d22a5b0eb859de0cd500c17ed86ba620efcb2fe6bc2cceb8991b5",
+    "generator_calibration_v2_decision.txt": "510b8a7b2462542d235cb67b2b6f1c50b0b428fe3875eac3ed601a0becfd37da"
+  },
+  "note": "Thin margins (D3 s=0.05 R2 1.88 vs 2.0, worst G1 cell 20/24; dumbbell sparse n=5000 18/24) do not reopen the selection; the rules were locked before the results."
+}

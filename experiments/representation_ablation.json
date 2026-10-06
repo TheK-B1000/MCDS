@@ -1,21 +1,18 @@
 {
   "study_id": "representation_ablation",
   "study_seed": 20261012,
-  "description": "OPTIONAL isolated ablation: implicit (CGAL range queries) vs explicit (UDG materialised once as CSR adjacency from the same CGAL queries) representation, one algorithm (Marathe, chosen because its work is a plain BFS + level MIS with no algorithm-specific data structures). Same points, same graph (cross-checked). Not part of the primary comparison.",
+  "description": "OPTIONAL isolated representation study (count-only, never builds a graph): measured memory of the implicit representation (CGAL index; final_representation_bytes, index_build_peak_bytes, pipeline_peak_bytes) against the analytical size an explicit representation WOULD need (explicit_csr_bytes_estimate, explicit_bitmatrix_bytes_estimate), with |E| counted by streaming radius queries. Marathe only, because its work is a plain BFS + level MIS and it scales to n = 50,000. Not part of the primary comparison.",
   "algorithms": [
     "marathe"
   ],
-  "spatial_backend": [
-    "cgal",
-    "explicit"
-  ],
+  "spatial_backend": "cgal",
   "synthetic": {
     "geometries": [
       "uniform",
       "clustered",
       "perturbed_grid",
       "corridor",
-      "cluster_bridge"
+      "dumbbell"
     ],
     "sizes": [
       1000,
@@ -31,16 +28,15 @@
     "geometry_parameters": {
       "clustered": {
         "clusters": 4,
-        "spread": 0.8
+        "background_fraction": 0.5,
+        "spread_relative": 0.05
       },
       "corridor": {
         "corridor_width": 3.0
       },
-      "cluster_bridge": {
-        "clusters": 3,
-        "spread": 0.45,
-        "bridge_fraction": 0.2,
-        "bridge_width": 0.6
+      "dumbbell": {
+        "neck_width": 1.0,
+        "neck_length": 3.0
       },
       "perturbed_grid": {
         "jitter": 0.15

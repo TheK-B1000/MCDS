@@ -12,6 +12,43 @@ This document describes the v1 methodology under development (label
 [methodology_audit.md](methodology_audit.md). Paper verification:
 [source_audit.md](source_audit.md).
 
+## 0. Hard invariant: points in, graph never stored
+
+The input is a set of n points (canonical `id,x,y`). The unit disk graph is
+**never constructed or stored explicitly** — no adjacency lists, matrices,
+edge lists or CSR — in any production or experimental path: generation,
+preprocessing (including the real-data largest-component filter), graph
+statistics, the four algorithms, validation, CDS diameter, exact OPT and every
+study. Adjacency is only ever obtained on demand by radius queries:
+
+```
+n points ─► SpatialIndex (CGAL kd-tree / uniform grid: point-index structures, O(n))
+         ─► neighbours queried only when needed ─► Marathe / Wan / Funke / Li
+```
+
+Enforced by `python/tests/test_implicit_graph_guard.py`:
+
+* behavioural: the memory-probe solver runs every phase (graph statistics,
+  cross-check, four algorithms, validation, CDS diameter) on a graph with
+  2,779,178 edges whose explicit CSR would need 22.3 MB; its whole-process
+  heap peak was 592 KB (CGAL) / 419 KB (grid) and must stay below 10% of the
+  CSR size. The real-data largest-component filter (union-find over the grid
+  scan, O(n)) is checked the same way with `tracemalloc`;
+* static tripwire: no C++ or Python source in the repository — production,
+  experiment tooling, visualisation/GUI, tests and test oracles — may contain
+  adjacency-building or edge-drawing constructs (adjacency lists, neighbour
+  maps, edge containers, CSR arrays, bit matrices, sparse/pair queries, graph
+  libraries, segment drawing). Justified allowlist: Marathe's per-BFS-level
+  vertex lists (O(n), no edges) and two negative assertions in the
+  visualisation test. Verified to flag every pre-fix violation, including the
+  removed `cds_edges` drawing and a test oracle that had stored Li's
+  distance-2 graph H (now evaluated on demand).
+
+There are no exceptions: the visualisation draws points only (the former
+`--show-cds-edges` option, which drew segments between adjacent CDS vertices,
+was removed with its `cds_edges` helper and GUI toggle), and the static
+tripwire also covers the visualisation and GUI sources.
+
 ## 1. Scope and positioning
 
 The study is a controlled empirical comparison of four established,
@@ -76,7 +113,6 @@ none knows which backend is active.
 | `cgal` | **Primary** backend of the final study | `CgalSpatialIndex` |
 | `grid` | Independent secondary backend; reference for validation and cross-checks; backend-sensitivity study | `GridSpatialIndex` (uniform grid, CSR buckets) |
 | brute force | Correctness oracle in tests only (O(n²)) | `cpp/tests/BruteForce.hpp` |
-| `explicit` | Representation ablation only: UDG materialised once as CSR adjacency | `ExplicitAdjacencyIndex` (built from CGAL queries) |
 
 **CGAL.** Package *dD Spatial Searching*, CGAL 6.1.2 (header-only; Boost 1.88
 headers), installed from conda-forge (`cgal-cpp=6.1.2`). Data structure:
@@ -85,7 +121,7 @@ headers), installed from conda-forge (`cgal-cpp=6.1.2`). Data structure:
 (default `Sliding_midpoint` splitter, bucket size 10). The tree is built
 eagerly (`Kd_tree::build()`) in the constructor, so construction lands in
 `T_spatial_index` and never in the first algorithm's `T_algorithm`. Query:
-`Kd_tree::search(out, CGAL::Fuzzy_iso_box(lo, hi, 0.0))`.
+CGAL **radial range search**, `Kd_tree::search(out, CGAL::Fuzzy_sphere(p, r', 0.0))`.
 
 **CGAL is used for spatial candidate retrieval; final UDG adjacency is
 determined by the same exact squared-distance predicate used by the grid and
@@ -95,15 +131,20 @@ brute-force reference implementations:**
 q ∈ N(p)  ⇔  q ≠ p  and  distanceSquared(p, q) <= r * r
 ```
 
-The candidate box has half-side
-`h = r·(1 + 1e-9) + 8·ε·(|p.x| + |p.y| + r)` (ε = machine epsilon). Why the
-widening, and why it cannot change the graph: the exact predicate accepts q
-only if `dx² + dy² <= r²` in floating point, which implies `|dx|, |dy| <= r` up
-to rounding; the margin covers that rounding and the rounding of `p ± h`. So
-the box is a superset of every point the predicate can accept. Widening can
-only add *false-positive candidates*, which the exact predicate then rejects —
-never false-positive edges, and never a missed edge. `Fuzzy_iso_box`
-containment is inclusive (`lo <= x <= hi`, verified in the installed header).
+The search radius is `r' = r·(1 + 1e-9) + 8·ε·(|p.x| + |p.y| + r)`
+(ε = machine epsilon). Why CGAL's sphere is not itself the adjacency test: in
+the installed CGAL 6.1.2, `Fuzzy_sphere::contains()` is inclusive
+(`distance <= r'²`) but `contains_point_given_as_coordinates()` is exclusive
+(`distance < r'²`), and which one runs depends on the kd-tree's internal search
+path — a point at exactly distance r would be reported or not depending on tree
+layout. Why the widening cannot change the graph: the exact predicate accepts q
+only if `dx² + dy² <= r²` in floating point; such a point's squared distance is
+at most r² up to rounding, strictly below r'², so CGAL reports it on either
+path. Widening can only add *false-positive candidates*, which the exact
+predicate then rejects — never false-positive edges, and never a missed edge.
+(The radial query replaced an equivalent axis-aligned `Fuzzy_iso_box` candidate
+query before any reportable data was collected; a circle covers π/4 of the
+box's area, so fewer candidates reach the exact test.)
 
 **Shared contract (all backends):** query point excluded; distinct coincident
 points included; boundary inclusive; no tolerance; result order unspecified;
@@ -161,16 +202,33 @@ replicate count is a multiple of 4. Rows record `execution_order`,
 | Class | Metrics | Comparable across algorithms | Across backends |
 | --- | --- | --- | --- |
 | **Primary** | `valid_solution`, `t_algorithm_ms`, `cds_size`, `cds_fraction` | yes | — (primary study has one backend) |
-| **Secondary** | `heap_peak_additional_bytes`, `t_spatial_index_ms`, `neighbor_queries`, `neighbors_returned`, `cds_diameter`, `empirical_ratio` | yes | `neighbor_queries`, `neighbors_returned` are identical by construction |
+| **Secondary** | `algorithm_incremental_peak_bytes`, `final_representation_bytes`, `index_build_peak_bytes`, `pipeline_peak_bytes`, `t_spatial_index_ms`, `neighbor_queries`, `neighbors_returned`, `cds_diameter`, `empirical_ratio` | yes | `neighbor_queries`, `neighbors_returned` are identical by construction |
 | **Diagnostic** | `core_count`, `connector_count` (MIS/core vs connector), `domination_valid`, `connectivity_valid`, `undominated_count`, `max_neighbors_per_query`, `query_time_ns` | with care | — |
-| **Backend-specific diagnostic** | `grid_candidates_examined`, `grid_distance_computations`, `grid_avg_candidates_per_query`, `grid_cells_examined`, `grid_max_candidates_per_query`; `cgal_box_candidates`, `cgal_exact_distance_evaluations`, `cgal_max_box_candidates_per_query`; `index_bytes`, `index_heap_peak_bytes` | within one backend only | **never** |
+| **Backend-specific diagnostic** | `grid_candidates_examined`, `grid_distance_computations`, `grid_avg_candidates_per_query`, `grid_cells_examined`, `grid_max_candidates_per_query`; `cgal_range_candidates`, `cgal_exact_distance_evaluations`, `cgal_max_range_candidates_per_query`; `index_bytes` | within one backend only | **never** |
+| **Analytical estimate** (datasets.csv) | `explicit_csr_bytes_estimate` = (n+1)·8 + 2|E|·4; `explicit_bitmatrix_bytes_estimate` = ⌈n²/8⌉ — what an explicit graph *would* need; |E| from streaming radius queries; **nothing is built** | yes | — |
 
 Backend-specific columns are filled only for their own backend and are empty
-otherwise. `cgal_box_candidates` counts points the CGAL box search reported
+otherwise. `cgal_range_candidates` counts points the CGAL radial search reported
 (including the query point); CGAL's internal kd-tree node visits are not
-exposed and are not reported. `index_bytes` is exact for the grid and the
-explicit CSR and unavailable for CGAL; `index_heap_peak_bytes` (memory probes)
-measures every backend's build the same way.
+exposed and are not reported. `index_bytes` is exact for the grid and
+unavailable for CGAL; the memory-probe quantities below measure every backend
+the same way.
+
+**Memory (memory-probe rows; locked definitions).** One common baseline H₀ =
+live heap just before the representation build starts (the independent
+validation grid is built before H₀ when CGAL is the backend, so correctness
+infrastructure is excluded). P_b = absolute heap peak during the build; H_r =
+live heap after the build; H_s = live heap at `solve()` entry; I_a = peak
+above H_s during `solve()`.
+
+* `index_build_peak_bytes` = P_b − H₀: extra heap required at any point during
+  representation construction;
+* `final_representation_bytes` = H_r − H₀: retained representation footprint
+  after construction completes;
+* `algorithm_incremental_peak_bytes` = I_a: extra heap above the solve-entry
+  baseline during the algorithm;
+* `pipeline_peak_bytes` = max(P_b, H_s + I_a) − H₀: maximum end-to-end heap
+  increase above the common pre-build baseline.
 
 **CDS diameter** (secondary): hop diameter of the subgraph induced by the
 returned CDS D — the maximum over pairs of selected vertices of the shortest
@@ -180,8 +238,36 @@ optimisation objective.
 
 ## 6. Datasets, pairing and replication
 
-* Geometries: uniform, clustered, perturbed_grid, corridor, cluster_bridge
-  (project generators, unchanged). Requested (`density_target`,
+* Geometries: uniform, clustered, perturbed_grid, corridor, dumbbell.
+  **clustered** is a finite-window *Gaussian hotspot-plus-background model*:
+  the clustered geometry is modeled as a finite-window hotspot-plus-background
+  process, motivated by wireless-network models that superpose clustered and
+  background node populations. Hotspot nodes are Gaussian-distributed around
+  cluster centers, consistent with Thomas-process-style spatial models
+  (Thomas-process-*inspired*: four fixed hotspots and a fixed 50/50 mixture,
+  not a Thomas point process). Frozen version **D3-v2**: 4 hotspots, 50%
+  background, σ = s · L with s = 0.05 and L = sqrt(n / density) the window
+  side, and each hotspot point redrawn (same random stream) until it falls
+  inside the window. Scaling σ with L keeps the local regime stable as n
+  grows (thermodynamic scaling); s was selected by the preregistered
+  calibration ladder (`experiments/calibration/generator_freeze_v2.json`).
+  D3 v1 (absolute σ = 0.8, hotspot tails allowed outside the window) failed
+  the connectivity and degree-regime gates: its hotspot degree grew roughly
+  with n, and points falling outside the window became isolated. Draw order:
+  centres, then background, then hotspot points round-robin.
+  **dumbbell** (bottleneck geometry, successor of `cluster_bridge`): left
+  square [0, a]², a corridor (neck) [a, a + l] × [a/2 − w/2, a/2 + w/2] and a
+  right square, with w = 1.0, l = 3.0 (units of r) and
+  a = sqrt((n / density − w · l) / 2), so the total area is n / density.
+  Points are uniform over the domain: round(n · w · l / A) in the neck, the
+  rest split equally between the squares; draw order left, neck, right. The
+  neck holds ≤ 7.2% of the points at every primary n. v1 `cluster_bridge`
+  (fixed-size Gaussian blobs joined by bridge chains) had a mean degree
+  rising 88 → 1,781 over n and no response to density, so it failed the
+  scale-stability and density-response requirements. The previous blobs-only construction (`background_fraction =
+  0`) became essentially never connected at n ≥ 5,000 (blobs drift apart as
+  the region grows), which would have forced acceptance-conditioned, highly
+  atypical samples. Requested (`density_target`,
   `target_expected_degree`) and observed graph properties (mean/min/max/median
   degree, SD, density, components, isolated) are recorded per graph.
 * Pairing: each (geometry, n, density, replicate) yields exactly one graph;
@@ -189,9 +275,38 @@ optimisation objective.
   `dataset_sha256`, `points_fingerprint`, `graph_seed`.
 * Seeds: SHA-256 of all factors; replicates never share a dataset (V4).
 * Connectivity rule declared in the config; every attempt logged.
+* Generation feasibility is checked before generation and recorded as
+  `generation_infeasible_under_protocol` with the reason; such cells spend no
+  attempts and are listed by `run_study.py plan`. Dumbbell: the domain is
+  defined only if n / density > w · l and a ≥ w (excludes 8 of 9
+  `exact_small` cells, none in the primary study). Legacy `cluster_bridge`
+  (not used by any study): negligible probability of a connected UDG, with
+  cluster coordinates bounded at 6 sigma (P < 2e-9 per coordinate; not a
+  proof of impossibility). Sparse study: cells below the calibrated ≥ 18/24
+  acceptance.
 * Replicate counts are configuration-driven (`synthetic.replicates`). The graph
   is the statistical unit; timing repetitions are technical replicates
   (median per graph).
+
+### Literature support (candidate citations — TO VERIFY against full text)
+
+Brought in from a literature search; none has yet been read in full by the
+project, so none is cited as established until checked and logged in
+`docs/related_work_matrix.md` / `literature_search_log.xlsx`.
+
+| Claim used | Candidate source | Status |
+| --- | --- | --- |
+| Connectivity of random geometric graphs at fixed density degrades with n; connectivity threshold tied to minimum degree / isolated vertices, growing ~ log n | M. D. Penrose, *Random Structures & Algorithms* 15(2), 1999 (minimum-degree / connectivity thresholds); M. D. Penrose, *Random Geometric Graphs*, Oxford Univ. Press, 2003 | to verify |
+| Sharp asymptotic connectivity threshold for 2-D uniform geometric graphs | Penrose & Yang, *Annals of Applied Probability* (recent; Brunel repository record) | to verify (bibliographic details incomplete) |
+| Connectivity edge-density threshold of random unit disk graphs ≈ ½ log n | "a recent ACM paper on random unit disk graphs" | **UNVERIFIED — SOURCE REQUIRED** (no resolvable reference yet) |
+| Superposition of clustered users (Thomas cluster process) and uniform Poisson users in wireless networks | *Computer Networks*, 2020 (ScienceDirect S1389128619308874; reported as Ullah et al.) | to verify (authorship to confirm) |
+| Gaussian-distributed nodes around hotspot centres (Thomas process) as an established wireless spatial model | *Frontiers in Communications and Networks*, 2022 (hotspot clusters) | to verify |
+| Gaussian sensor clusters in non-homogeneous WSN deployments (coverage/connectivity) | *Ad Hoc Networks* (ScienceDirect S1570870512001680) | to verify |
+| Thomas/Poisson cluster processes for IoT devices concentrated at hotspots | *Drones* 5(3):94 (MDPI), 2021 | to verify |
+| Thermodynamic regime (finite mean degree) vs connectivity regime; growing the domain with n preserves the local regime | M. D. Penrose, *Random Geometric Graphs*, Oxford Univ. Press, 2003 | to verify |
+| Connectivity of random geometric graphs in non-convex domains; narrow / quasi-one-dimensional regions change connectivity behaviour | Giles, Georgiou & Dettmann, "Connectivity of Soft Random Geometric Graphs over Annuli", *J. Stat. Phys.*, 2016 (doi 10.1007/s10955-015-1436-1) | to verify |
+| Bottleneck / finitely ramified structures split into large components more easily than uniform RGGs | Dettmann, "Isolation and Connectivity in Random Geometric Graphs with Self-similar Intensity Measures", *J. Stat. Phys.*, 2018 (doi 10.1007/s10955-018-2059-0) | to verify |
+| Domination number of random geometric graphs under thermodynamic scaling | Mitsche & Penrose (bibliographic details not yet resolved) | to verify (details incomplete) |
 
 ## 7. Exact OPT on small instances
 
@@ -210,9 +325,12 @@ IQR, min, max, 95% bootstrap CIs; Wilson CIs for validity. Paired algorithm
 comparisons on identical graphs within one backend for `t_algorithm_ms`,
 `cds_size`, `cds_fraction`, `cds_diameter`: mean/median difference, bootstrap
 CI, Cohen's d_z, wins/ties/losses; runtime also as a geometric-mean ratio. No
-hypothesis tests. Replicate-count justification: `precision_curve.csv` (CI
-half-width of each paired difference using the first k = 5, 10, 15, … graphs)
-and `precision.csv` (normal-approximation projections). Pareto views (median
+hypothesis tests. Replicate count: selected mechanically from the clean
+precision pilot by `python/replicate_decision.py` under the locked rule
+`experiments/precision/replicate_rule_v1.json` (Student-t CI half-widths of
+paired CDS-fraction differences and log runtime ratios for k ∈ {20, 28, 36,
+44, 52}, every (geometry, density) stratum; see the protocol §4).
+`precision_curve.csv` and `precision.csv` remain descriptive aids only. Pareto views (median
 per cell, Pareto-optimal algorithms ringed): CDS size vs T_algorithm, CDS size
 vs neighbour queries, CDS fraction vs T_algorithm, empirical ratio vs
 T_algorithm.
@@ -225,7 +343,7 @@ T_algorithm.
 | `precision_pilot.json` | How many replicates are needed? |
 | `exact_small.json` | How close to OPT on small UDGs? |
 | `spatial_backend.json` | Does backend choice (CGAL vs grid) affect performance? (`backend_paired.csv`) |
-| `representation_ablation.json` | What does the implicit representation buy? Marathe with CGAL range queries vs the same Marathe on a materialised CSR adjacency (same points, same graph): adjacency construction time (`t_spatial_index_ms`), adjacency memory (`index_bytes`, `index_heap_peak_bytes`), `t_algorithm_ms`, `t_index_plus_algorithm_ms`, CDS size, validity |
+| `representation_ablation.json` | What does the implicit representation save? **Count-only, no graph is built**: measured implicit memory (`final_representation_bytes`, `index_build_peak_bytes`, `pipeline_peak_bytes`) vs the analytical size of an explicit CSR / bit-matrix (`explicit_*_bytes_estimate`) for growing n and density (Marathe only; scales to n = 50,000) |
 | `real_world_scaling.json` | Real spatial data (template paths) |
 | `smoke.json`, `pilot.json` | Pipeline checks |
 
@@ -270,7 +388,10 @@ OS-specific and include shared preprocessing.
   rescan all vertices per round / per selection), not of the distributed
   algorithms.
 * Li's `(4.8 + ln 5)·opt + 1.2` bound is not claimed (conditional on Lemma 2).
-* Exact OPT is exhaustive and capped at n = 20.
+* Exact OPT is exhaustive and capped at n = 20 (implicit: per-subset radius
+  queries, no stored adjacency).
+* CDS diameter costs |D|² radius queries per distinct CDS (implicit BFS,
+  O(n) memory), always after the algorithm timer.
 * CGAL internal search work is not observable; CGAL counters are limited to
   what the API returns.
 * Single machine; no cross-machine runtime comparison.

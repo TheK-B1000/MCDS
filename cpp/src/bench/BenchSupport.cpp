@@ -4,7 +4,6 @@
 #include <chrono>
 #include <queue>
 #include <stdexcept>
-#include <unordered_map>
 #include <cmath>
 #include <cstring>
 
@@ -108,83 +107,54 @@ GraphStats computeGraphStats(const PointSet& points, const SpatialIndex& index, 
 
 long long cdsDiameter(const PointSet& points, const SpatialIndex& index, const std::vector<int>& selectedIds,
                       double radius) {
-    // Local indices 0..k-1 for the distinct selected ids.
-    std::unordered_map<int, std::size_t> local;
-    std::vector<int> ids;
+    // Implicit only: an O(n) membership bitmap and distance array; neighbours
+    // are queried on demand and filtered to the selected set. No edge of the
+    // UDG or of the CDS-induced subgraph is ever stored.
+    const std::size_t n = points.size();
+    std::vector<char> inD(n, 0);
+    std::vector<std::size_t> members;
     for (const int id : selectedIds) {
-        if (local.emplace(id, ids.size()).second) {
-            ids.push_back(id);
+        const std::size_t i = points.indexOf(id);
+        if (!inD[i]) {
+            inD[i] = 1;
+            members.push_back(i);
         }
     }
-    const std::size_t k = ids.size();
+    const std::size_t k = members.size();
     if (k == 0) {
         return -1;
     }
-    std::vector<std::vector<std::size_t>> adj(k);
-    std::vector<int> neighbors;
-    for (std::size_t a = 0; a < k; ++a) {
-        index.radiusQuery(ids[a], radius, neighbors);
-        for (const int nid : neighbors) {
-            const auto it = local.find(nid);
-            if (it != local.end()) {
-                adj[a].push_back(it->second);
-            }
-        }
-    }
-    (void)points;
     long long diameter = 0;
-    std::vector<long long> dist(k);
+    std::vector<int> dist(n, -1);
+    std::vector<std::size_t> touched;
+    touched.reserve(k);
+    std::vector<int> neighbors;
     std::queue<std::size_t> q;
-    for (std::size_t src = 0; src < k; ++src) {
-        std::fill(dist.begin(), dist.end(), -1);
+    for (const std::size_t src : members) {
+        for (const std::size_t t : touched) dist[t] = -1;
+        touched.clear();
         dist[src] = 0;
+        touched.push_back(src);
         q.push(src);
-        std::size_t reached = 0;
         while (!q.empty()) {
             const std::size_t u = q.front();
             q.pop();
-            ++reached;
-            diameter = std::max(diameter, dist[u]);
-            for (const std::size_t v : adj[u]) {
-                if (dist[v] < 0) {
+            diameter = std::max<long long>(diameter, dist[u]);
+            index.radiusQuery(points.idAt(u), radius, neighbors);
+            for (const int nid : neighbors) {
+                const std::size_t v = points.indexOf(nid);
+                if (inD[v] && dist[v] < 0) {
                     dist[v] = dist[u] + 1;
+                    touched.push_back(v);
                     q.push(v);
                 }
             }
         }
-        if (reached != k) {
+        if (touched.size() != k) {
             return -1;  // induced subgraph disconnected
         }
     }
     return diameter;
-}
-
-ExplicitAdjacencyIndex::ExplicitAdjacencyIndex(const PointSet& points, const SpatialIndex& source, double radius)
-    : points_(&points), radius_(radius) {
-    const std::size_t n = points.size();
-    offsets_.assign(n + 1, 0);
-    std::vector<int> buf;
-    for (std::size_t i = 0; i < n; ++i) {
-        source.radiusQuery(points.idAt(i), radius, buf);
-        neighbors_.insert(neighbors_.end(), buf.begin(), buf.end());
-        offsets_[i + 1] = neighbors_.size();
-    }
-    neighbors_.shrink_to_fit();
-}
-
-std::size_t ExplicitAdjacencyIndex::adjacencyBytes() const {
-    return offsets_.size() * sizeof(std::uint64_t) + neighbors_.size() * sizeof(int);
-}
-
-void ExplicitAdjacencyIndex::radiusQueryImpl(int pointId, double radius, std::vector<int>& out) const {
-    if (radius != radius_) {
-        throw std::invalid_argument("ExplicitAdjacencyIndex: queried with a radius it was not built for");
-    }
-    const std::size_t i = points_->indexOf(pointId);
-    out.assign(neighbors_.begin() + static_cast<std::ptrdiff_t>(offsets_[i]),
-               neighbors_.begin() + static_cast<std::ptrdiff_t>(offsets_[i + 1]));
-    ++stats_.neighborQueries;
-    stats_.neighborsReturned += out.size();
 }
 
 std::uint64_t pointsFingerprint(const PointSet& points) {

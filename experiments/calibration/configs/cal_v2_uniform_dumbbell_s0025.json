@@ -1,0 +1,41 @@
+{
+  "study_seed": 20261107,
+  "algorithms": [
+    "marathe"
+  ],
+  "description": "Calibration-only config for generator_definitions_v2 (not a study).",
+  "synthetic": {
+    "sizes": [
+      500,
+      1000,
+      2000,
+      5000,
+      10000
+    ],
+    "densities": [
+      5.0,
+      8.0,
+      12.0
+    ],
+    "radius": 1.0,
+    "replicates": 1,
+    "geometries": [
+      "uniform",
+      "dumbbell",
+      "clustered"
+    ],
+    "geometry_parameters": {
+      "clustered": {
+        "clusters": 4,
+        "spread": 0.8,
+        "background_fraction": 0.5,
+        "spread_relative": 0.025
+      },
+      "dumbbell": {
+        "neck_width": 1.0,
+        "neck_length": 3.0
+      }
+    }
+  },
+  "study_id": "cal_v2_uniform_dumbbell_s0025"
+}

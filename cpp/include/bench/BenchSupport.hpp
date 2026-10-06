@@ -53,33 +53,6 @@ GraphStats computeGraphStats(const PointSet& points, const SpatialIndex& index, 
 long long cdsDiameter(const PointSet& points, const SpatialIndex& index, const std::vector<int>& selectedIds,
                       double radius);
 
-/// Explicit-adjacency representation for the representation ablation: the UDG
-/// is materialised once (CSR, from a source index's radius queries) and
-/// `radiusQuery` returns the stored list. Same graph, explicit storage.
-/// Only valid for the radius it was built with; any other radius throws.
-class ExplicitAdjacencyIndex : public SpatialIndex {
-public:
-    ExplicitAdjacencyIndex(const PointSet& points, const SpatialIndex& source, double radius);
-
-    std::size_t size() const override { return points_->size(); }
-    const QueryStats& stats() const override { return stats_; }
-    void resetStats() override { stats_.reset(); }
-    const char* name() const override { return "explicit-csr"; }
-
-    std::size_t adjacencyBytes() const;
-    std::uint64_t edgeSlots() const { return neighbors_.size(); }
-
-protected:
-    void radiusQueryImpl(int pointId, double radius, std::vector<int>& out) const override;
-
-private:
-    const PointSet* points_;
-    double radius_;
-    std::vector<std::uint64_t> offsets_;  // size n + 1
-    std::vector<int> neighbors_;          // neighbour ids, grouped by point index
-    mutable QueryStats stats_;
-};
-
 /// FNV-1a 64 over (n, then each point's id as int64 and x, y as IEEE-754
 /// binary64, little-endian, in input order). The Python side computes the same
 /// value from the canonical CSV, so the harness can prove every algorithm saw

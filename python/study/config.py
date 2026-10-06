@@ -13,21 +13,23 @@ from pathlib import Path
 from typing import Any
 
 KNOWN_ALGORITHMS = ("marathe", "wan", "funke", "li")
-KNOWN_GEOMETRIES = ("uniform", "clustered", "perturbed_grid", "corridor", "cluster_bridge")
+KNOWN_GEOMETRIES = ("uniform", "clustered", "perturbed_grid", "corridor", "cluster_bridge", "dumbbell")
 INSTRUMENTATION_LEVELS = ("none", "basic", "detailed")
 CONNECTIVITY_MODES = ("resample_until_connected", "accept_all")
 PROCESS_MODES = ("shared", "isolated")
 # Spatial-query backends. "cgal" is the primary backend of the final study;
-# "grid" is the independent secondary backend; "explicit" materialises the UDG
-# (representation ablation only). There is no automatic fallback between them.
-SPATIAL_BACKENDS = ("cgal", "grid", "explicit")
+# "grid" is the independent secondary backend. Both answer radius queries on
+# the n input points; neither ever stores UDG adjacency (hard project
+# invariant). There is no automatic fallback between them.
+SPATIAL_BACKENDS = ("cgal", "grid")
 PRIMARY_SPATIAL_BACKEND = "cgal"
 EXACT_HARD_MAX_N = 20
 
 # Parameters `generators.generate` accepts (density is a factor, not a param).
 GENERATOR_PARAMETERS = {
     "width", "height", "region", "clusters", "spread", "spacing", "jitter",
-    "corridor_width", "bridge_fraction", "bridge_width",
+    "corridor_width", "bridge_fraction", "bridge_width", "background_fraction",
+    "spread_relative", "neck_width", "neck_length",
 }
 
 DEFAULTS: dict[str, Any] = {
@@ -51,7 +53,9 @@ DEFAULTS: dict[str, Any] = {
     "output_dir": None,
 }
 
-TOP_LEVEL_KEYS = set(DEFAULTS) | {"study_id", "study_seed", "synthetic", "external"}
+TOP_LEVEL_KEYS = set(DEFAULTS) | {"study_id", "study_seed", "synthetic", "external", "feasibility_calibration"}
+CALIBRATION_KEYS = {"file", "sha256", "min_acceptance_rate"}
+CALIBRATION_OPTIONAL_KEYS = {"geometries"}
 SYNTHETIC_KEYS = {"geometries", "sizes", "densities", "radius", "replicates", "geometry_parameters"}
 EXTERNAL_KEYS = {"datasets"}
 EXTERNAL_DATASET_KEYS = {"name", "path", "radii", "units", "source_path", "notes"}
@@ -173,6 +177,36 @@ def resolve(raw: dict[str, Any]) -> dict[str, Any]:
         raise ConfigError("timing.repetitions >= 1 and timing.warmups >= 0")
     if cfg["counter_pass"] not in (None, "basic", "detailed"):
         raise ConfigError("counter_pass must be null, 'basic' or 'detailed'")
+    cal = cfg.get("feasibility_calibration")
+    if cal is not None:
+        # One entry, or a list of entries each authoritative for named geometries
+        # (e.g. one calibration file per generator revision). Every synthetic
+        # geometry must then be covered by exactly one entry.
+        entries = cal if isinstance(cal, list) else [cal]
+        if not entries:
+            raise ConfigError("feasibility_calibration must not be empty")
+        covered: dict[str, int] = {}
+        for i, entry in enumerate(entries):
+            _unknown(set(entry), CALIBRATION_KEYS | CALIBRATION_OPTIONAL_KEYS, f"feasibility_calibration[{i}]")
+            for key in CALIBRATION_KEYS:
+                if key not in entry:
+                    raise ConfigError(f"feasibility_calibration.{key} is required")
+            if not 0.0 < float(entry["min_acceptance_rate"]) <= 1.0:
+                raise ConfigError("feasibility_calibration.min_acceptance_rate must be in (0, 1]")
+            if len(entries) > 1 and not entry.get("geometries"):
+                raise ConfigError("with several feasibility_calibration entries each must name its geometries")
+            for g in entry.get("geometries", []):
+                if g in covered:
+                    raise ConfigError(f"geometry {g!r} is covered by more than one feasibility_calibration entry")
+                covered[g] = i
+        if covered and cfg.get("synthetic"):
+            missing = [g for g in cfg["synthetic"]["geometries"] if g not in covered]
+            if missing:
+                raise ConfigError(f"geometries {missing} are not covered by any feasibility_calibration entry")
+        if cfg["final"]:
+            raise ConfigError("the primary final study must not be gated by calibration exclusions "
+                              "(its factorial must be complete); verify feasibility before locking instead")
+
     max_n = int(cfg["exact"].get("max_n", 0))
     if not 0 <= max_n <= EXACT_HARD_MAX_N:
         raise ConfigError(f"exact.max_n must be within [0, {EXACT_HARD_MAX_N}] (exhaustive search)")

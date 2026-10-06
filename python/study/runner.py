@@ -81,9 +81,9 @@ def _backend_counters(backend: str, run: dict[str, Any], queries: Any) -> dict[s
 
     grid: points in scanned cells (incl. the query point), exact distance
     tests (= candidates - queries), cells scanned. cgal: points reported by the
-    CGAL Fuzzy_iso_box search (incl. the query point) and the exact distance
+    CGAL Fuzzy_sphere radial search (incl. the query point) and the exact distance
     tests on them; CGAL's internal kd-tree node visits are not exposed and are
-    not reported. explicit: no per-query candidate work exists.
+    not reported.
     """
     cand = run.get("candidates_examined")
     out: dict[str, Any] = {}
@@ -94,9 +94,9 @@ def _backend_counters(backend: str, run: dict[str, Any], queries: Any) -> dict[s
         out["grid_cells_examined"] = run.get("cells_examined")
         out["grid_max_candidates_per_query"] = run.get("max_candidates_per_query")
     elif backend == "cgal":
-        out["cgal_box_candidates"] = cand
+        out["cgal_range_candidates"] = cand
         out["cgal_exact_distance_evaluations"] = run.get("distance_computations")
-        out["cgal_max_box_candidates_per_query"] = run.get("max_candidates_per_query")
+        out["cgal_max_range_candidates_per_query"] = run.get("max_candidates_per_query")
     return out
 
 
@@ -166,7 +166,7 @@ class Study:
         if snap["git"]["dirty"]:
             self.log("WARNING: git working tree is dirty; results will record git_dirty=true.")
         build = snap.get("solver_build") or {}
-        needs_cgal = [b for b in config_mod.backends(self.cfg) if b in ("cgal", "explicit")]
+        needs_cgal = [b for b in config_mod.backends(self.cfg) if b == "cgal"]
         if needs_cgal and not build.get("cgal_available"):
             raise StudyError(f"config requests spatial backend(s) {needs_cgal} but the solver was built without "
                              "CGAL (MCDS_WITH_CGAL=OFF or CGAL not found). Refusing to run: no fallback to grid.")
@@ -439,7 +439,10 @@ class Study:
                 "index_cells": (idx["cells_x"] * idx["cells_y"]) if "cells_x" in idx else None,
                 "index_bytes": idx.get("index_bytes"),
                 "dataset_bytes": probe["input"]["dataset_bytes"],
-                "edges": g["edges"], "mean_degree": g["mean_degree"], "min_degree": g["min_degree"],
+                "edges": g["edges"],
+                "explicit_csr_bytes_estimate": g.get("explicit_csr_bytes_estimate"),
+                "explicit_bitmatrix_bytes_estimate": g.get("explicit_bitmatrix_bytes_estimate"),
+                "mean_degree": g["mean_degree"], "min_degree": g["min_degree"],
                 "max_degree": g["max_degree"], "median_degree": g["median_degree"], "degree_std": g["degree_std"],
                 "graph_density": g["graph_density"], "isolated_count": g["isolated_count"],
                 "component_count": g["component_count"], "largest_component": g["largest_component"],
@@ -506,7 +509,8 @@ class Study:
             "spatial_backend": data["spatial_backend"], "spatial_index_name": data["index"]["backend"],
             "t_spatial_index_ms": data["timing_ms"]["spatial_index"],
             "index_bytes": data["index"].get("index_bytes"),
-            "index_heap_peak_bytes": data["index"].get("index_heap_peak_bytes"),
+            "index_build_peak_bytes": data["index"].get("index_build_peak_bytes"),
+            "final_representation_bytes": data["index"].get("final_representation_bytes"),
             "backend_crosscheck": data["backend_crosscheck"]["status"],
             "phase": phase, "repetition": run["repetition"], "sequence": run["sequence"],
             "process_mode": process_mode, "instrumentation": data["instrumentation"],
@@ -521,7 +525,8 @@ class Study:
             "avg_neighbors_per_query": (run["neighbors_returned"] / q) if q else None,
             "max_neighbors_per_query": run.get("max_neighbors_per_query"),
             "query_time_ns": run.get("query_time_ns"),
-            "heap_peak_additional_bytes": run.get("heap_peak_additional_bytes"),
+            "algorithm_incremental_peak_bytes": run.get("algorithm_incremental_peak_bytes"),
+            "pipeline_peak_bytes": run.get("pipeline_peak_bytes"),
             "heap_allocation_count": run.get("heap_allocation_count"),
             "heap_allocated_bytes": run.get("heap_allocated_bytes"),
             "rss_before_algorithm_bytes": run.get("rss_before_algorithm_bytes"),

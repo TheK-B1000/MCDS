@@ -261,7 +261,8 @@ CDS diameter (after the timer, independent grid); separate connectivity
 timing; exact OPT moved into its own process with its own timeout (failures
 recorded, heuristic rows kept); per-metric paired statistics,
 `backend_paired.csv`, `precision.csv`, `precision_curve.csv`; Pareto views;
-representation ablation (`explicit` CSR backend, Marathe only); configs
+representation ablation (originally an `explicit` CSR backend; removed in
+§11 and replaced by a count-only estimate); configs
 `precision_pilot`, `spatial_backend`, `representation_ablation`; fairness
 V7–V9; schema `mcds-results-2`; bench schema `mcds-bench/2`.
 
@@ -274,3 +275,113 @@ per row (`execution_order`, `execution_position`, `schedule_row`).
 
 **Tests after this pass.** C++ 12/12 suites (+ `test_spatial_backends`);
 Python 82 passed, 1 optional skip. Study results: see the hand-over report.
+
+## 11. Hard invariant: the graph is never stored (2026-10-05)
+
+Professor's requirement: the input remains a set of n points and the UDG is
+never created or stored explicitly at any point. Audit of every path found
+five places that stored edges; all are fixed, and a guard now enforces it.
+
+| Place | Before | Now |
+| --- | --- | --- |
+| Real-data largest-component filter (`real_dataset.py`) | full Python adjacency list of the dataset | union-find over the grid scan, O(n); same tie-breaking (largest, then smallest member index) |
+| Exact OPT (`ExactSmallMCDS.cpp`, n ≤ 20) | adjacency lists | per-subset radius queries through an implicit `GridSpatialIndex`; signature and tests unchanged |
+| CDS diameter (`BenchSupport.cpp`) | CDS-induced subgraph lists | BFS from every CDS vertex with on-demand radius queries filtered to D; O(n) bitmap + distances |
+| Representation ablation | `ExplicitAdjacencyIndex` (whole UDG as CSR) | removed; `explicit` backend removed from bench, config and tests; replaced by `explicit_csr_bytes_estimate` / `explicit_bitmatrix_bytes_estimate` (count-only) |
+| Visualisation `--show-cds-edges` | segments between adjacent CDS points (`cds_edges`) | removed (CLI flags, `--edge-k-limit`, GUI toggle, legend entry and helper); the plot draws points only; a test asserts the API and flags are gone and no line is drawn; tripwire extended to visualisation/GUI |
+
+Already implicit (verified): all four algorithms (Marathe's per-level vertex
+lists are O(n), no edges), validator, connectivity, graph statistics (degree
+counts only), `explicit_baseline.py` (counts edges, stores none).
+
+Guard (`python/tests/test_implicit_graph_guard.py`): behavioural — dense graph
+with 2,779,178 edges (explicit CSR 22.3 MB): whole-process heap peak 592 KB
+(CGAL) / 419 KB (grid) across every phase, required < 10% of the CSR; LCC
+filter checked with `tracemalloc` (< 5 MB on ~2.4 M edges). Static tripwire —
+flags adjacency-building constructs in production sources; verified to flag
+all four pre-fix files (7 + 3 + 1 + 5 hits).
+
+Memory accounting finalised with locked definitions (H₀ baseline;
+`index_build_peak_bytes`, `final_representation_bytes`,
+`algorithm_incremental_peak_bytes` — renamed from `heap_peak_additional_bytes`,
+which was already incremental — and `pipeline_peak_bytes`). Schema
+`mcds-results-3`.
+
+Studies: the queue was stopped. smoke, spatial_backend and the partial
+exact_small run are archived in `results/prefix_implicit_fix_engineering/`
+as pre-fix engineering evidence (CDS diameter and exact OPT stored edges).
+New CDS-diameter tests (known graphs + brute-force comparison on 60 random
+sets) added. Tests after the fix: C++ 12/12; Python 86 passed + 1 optional
+skip.
+
+## 12. Structurally infeasible generator cells (2026-10-05)
+
+The post-fix exact_small run stalled in its cluster_bridge cells: all 9
+replicates of `cluster_bridge|n=10|density=3` exhausted 200 attempts. Cause
+(generator design, not an MCDS issue): `gen_cluster_bridge` places cluster
+centres at least max(6·spread, 8) apart and only round(0.25·n) = 2-4 bridge
+points along each gap, so no connected UDG can exist at n = 10, 13, 16; ~14 h
+would have been spent recording 216 predetermined failures. The run was
+stopped and archived (`results/postfix_engineering/`).
+
+Fix: deterministic pre-generation check `study.datasets.structural_feasibility`
+(x-projection argument; cluster coordinates bounded at 6 sigma). Infeasible
+cells are recorded as `structurally_infeasible` with the reason, spend no
+attempts, and are listed by `run_study.py plan`. cluster_bridge stays in
+every study where it is feasible, with unchanged parameters (bridge_fraction
+was deliberately not raised to rescue the cells). Only the 9 exact_small
+cluster_bridge cells are affected; no other config is. Tests: analytical
+cases, an empirical cross-check (900 generator draws at the flagged sizes,
+none connected), and an end-to-end exclusion test.
+
+## 13. CGAL candidate query: radial search (2026-10-06)
+
+Candidate retrieval switched from `Fuzzy_iso_box` to CGAL's radial range
+search `Fuzzy_sphere` (radius r' = r(1+1e-9) + 8ε(|x|+|y|+r)), before any
+reportable data. Reading the installed header showed that CGAL 6.1.2's sphere
+boundary test differs by internal path (`contains()` inclusive,
+`contains_point_given_as_coordinates()` exclusive), so the sphere is used only
+to retrieve a guaranteed superset; adjacency is still decided by the shared
+exact predicate. Counters renamed `cgal_range_candidates`,
+`cgal_max_range_candidates_per_query`; bench `counter_semantics` =
+`cgal_radial_report`. Differential suite re-run (see the hand-over report).
+
+Terminology correction (2026-10-06): the status is
+`generation_infeasible_under_protocol` (function `generation_feasibility`).
+The Gaussian cluster coordinates are unbounded, so the 6-sigma argument shows
+negligible probability (< 2e-9 per coordinate), not impossibility; the 900
+failed draws are corroborating evidence, not a proof. The pre-freeze
+exact_small run of 2026-10-06 00:42 still carries the earlier label
+`structurally_infeasible` in its records.
+
+## 14. Clustered geometry redesign and density-5 removal (2026-10-06)
+
+Finding: the blobs-only clustered generator (4 Gaussian blobs, σ 0.8, centres
+uniform in a region of side √(n/density)) almost never yields a connected UDG
+at large n (connectivity acceptance 1.2% at n = 5,000 and 0.4% at
+n = 10,000 in pre-freeze runs; 0/12 at n = 10,000 for every density in the
+prototype comparison), so large-n clustered cells would contain only rare,
+atypical accepted graphs (selection bias).
+
+Prototype comparison (12 graphs per cell; connected count at densities 5/8/12;
+scratch evidence, not committed):
+
+| Design | n = 1,000 | n = 5,000 | n = 10,000 |
+| --- | --- | --- | --- |
+| D0 blobs only (old) | 1 / 2 / 3 | 0 / 0 / 1 | 0 / 0 / 0 |
+| D1 ⌈n/100⌉ blobs | 0 / 1 / 3 | 0 / 0 / 1 | 0 / 0 / 0 |
+| D2 + 40% background | 0 / 4 / 9 | 0 / 6 / 12 | 0 / 4 / 11 |
+| D3 + 50% background | 6 / 7 / 12 | 0 / 8 / 11 | 0 / 8 / 9 |
+
+Decision (user): adopt D3 (4 hotspots, σ 0.8, 50% hotspot / 50% uniform
+background, same region/density convention) as the clustered generator;
+primary final factorial uses densities 8 and 12 for all geometries (density 5
+removed; balanced 50-cell design); density 5 only in an optional,
+calibration-gated sparse study, never mixed into the primary comparison.
+Implementation: `gen_clustered(..., background_fraction=0.5)`;
+`background_fraction = 0` reproduces the old construction exactly (tested).
+Preregistered calibration on independent validation seeds:
+`python/connectivity_calibration.py` →
+`experiments/calibration/generator_calibration_v1.json` (results: see the
+hand-over report). Calibration-gated admission: `feasibility_calibration`
+(file + sha256 + min_acceptance_rate); forbidden for `final: true`.

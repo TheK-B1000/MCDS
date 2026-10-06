@@ -181,11 +181,19 @@ measurement driver), `mcds_bench_mem` (memory probes), and the test suites
 (including `test_spatial_backends`, the CGAL / grid / brute-force
 differential suite).
 
+### Hard invariant
+
+The input is a set of n points and the unit disk graph is **never constructed
+or stored explicitly** anywhere (algorithms, preprocessing, validation, CDS
+diameter, exact OPT, studies); neighbours are queried on demand. Enforced by
+`python/tests/test_implicit_graph_guard.py` (on a 2.78 M-edge graph the whole
+solver process peaks below 0.6 MB, versus 22 MB for an explicit CSR).
+
 ### Spatial backends
 
 All algorithms see only the `SpatialIndex` interface.
 
-* **CGAL (primary):** `CGAL::Kd_tree` + `CGAL::Fuzzy_iso_box` (dD Spatial
+* **CGAL (primary):** `CGAL::Kd_tree` + `CGAL::Fuzzy_sphere` radial search (dD Spatial
   Searching) retrieve candidates; adjacency is decided by the same exact
   predicate `distanceSquared(p, q) <= r²` as every other backend.
 * **Uniform grid (secondary):** independent implementation; reference for
@@ -212,10 +220,11 @@ python python/generators.py --type uniform --n 1000 --seed 42 \
 | `--type` | Shape | Why it is interesting |
 | --- | --- | --- |
 | `uniform` | uniform over a square | the baseline case |
-| `clustered` | Gaussian blobs | dense cliques, weak or absent links between them |
+| `clustered` | 4 Gaussian hotspots holding 50% of the points on a 50% uniform background; studies use D3-v2 (`--spread-relative 0.05`: σ = 0.05 · window side, hotspots kept inside the window) | dense hotspots in a sparse but connectable field (hotspot-plus-background model) |
 | `perturbed_grid` | jittered lattice | very regular, reliably connected; easiest case |
 | `corridor` | long narrow strip | forces the CDS into a long path, near worst-case size |
-| `cluster_bridge` | blobs joined by thin chains | a correct CDS must include the bridges; coverage-only greed may miss them |
+| `dumbbell` | two squares joined by a narrow neck (`--neck-width 1 --neck-length 3`), area n / density | a controlled bottleneck: every connected dominating set must cross the neck |
+| `cluster_bridge` | blobs joined by thin chains (legacy v1; not used by the study configs) | a correct CDS must include the bridges; coverage-only greed may miss them |
 
 `--density` (points per unit area) is the main knob: the expected degree of an
 interior point is about `density * pi * R^2`, so density controls how dense the
@@ -267,7 +276,7 @@ python python/visualization.py \
     --points datasets/e2e_bridge_300.csv \
     --result results/e2e_bridge_300.json \
     --save results/e2e_bridge_300.png \
-    --no-show --show-cds-edges
+    --no-show
 ```
 
 GUI color modes (visualization only; algorithms unchanged):
@@ -303,8 +312,8 @@ execution), `datasets.csv`, `generation_attempts.csv`, `failures.csv`,
 
 Configs in `experiments/`: `smoke`, `pilot`, `precision_pilot` (replicate
 count), `exact_small` (|D|/OPT for n ≤ 16), `spatial_backend` (optional
-CGAL-vs-grid sensitivity), `representation_ablation` (optional implicit vs
-explicit adjacency), `real_world_scaling` (template), `final` (primary study;
+CGAL-vs-grid sensitivity), `representation_ablation` (optional implicit memory vs
+count-only explicit-size estimate; no graph is built), `real_world_scaling` (template), `final` (primary study;
 CGAL only; not yet locked). Every config states its `spatial_backend`.
 
 ### Real-world / external datasets

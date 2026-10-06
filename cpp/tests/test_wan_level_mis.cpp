@@ -314,16 +314,7 @@ bool satisfiesLiLemma2(
     }
     (void)points;
 
-    std::vector<std::vector<std::size_t>> adj(m);
-    for (std::size_t i = 0; i < m; ++i) {
-        for (std::size_t j = i + 1; j < m; ++j) {
-            if (shareCommonNeighbor(index, radius, mis[i], mis[j])) {
-                adj[i].push_back(j);
-                adj[j].push_back(i);
-            }
-        }
-    }
-
+    // H is never stored: its edges are evaluated on demand during the BFS.
     std::vector<char> seen(m, 0);
     std::queue<std::size_t> q;
     seen[0] = 1;
@@ -333,8 +324,8 @@ bool satisfiesLiLemma2(
         const std::size_t u = q.front();
         q.pop();
         ++visited;
-        for (const std::size_t v : adj[u]) {
-            if (seen[v]) {
+        for (std::size_t v = 0; v < m; ++v) {
+            if (seen[v] || !shareCommonNeighbor(index, radius, mis[u], mis[v])) {
                 continue;
             }
             seen[v] = 1;

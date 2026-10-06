@@ -200,7 +200,7 @@ struct Options {
     bool graphOnly = false;
     bool runDisconnected = false;
     bool emitSolution = false;
-    std::string spatialBackend;  // required: grid | cgal | explicit
+    std::string spatialBackend;  // required: grid | cgal
 };
 
 void usage() {
@@ -209,7 +209,7 @@ void usage() {
         "                  [--algorithms a,b,c,d] [--repetitions N] [--warmups W]\n"
         "                  [--instrumentation none|basic|detailed] [--validate all|first]\n"
         "                  [--exact-max-n K] [--graph-only] [--run-disconnected] [--emit-solution]\n"
-        "                  --spatial-backend grid|cgal|explicit\n"
+        "                  --spatial-backend grid|cgal\n"
         "\n"
         "Algorithms run in the order given; repetitions are interleaved across algorithms.\n");
 }
@@ -377,8 +377,8 @@ int main(int argc, char** argv) {
             if (!seen.insert(a).second) { std::fprintf(stderr, "error: algorithm '%s' listed twice\n", a.c_str()); return 2; }
         }
     }
-    if (opt.spatialBackend != "grid" && opt.spatialBackend != "cgal" && opt.spatialBackend != "explicit") {
-        std::fprintf(stderr, "error: --spatial-backend must be grid, cgal or explicit (got '%s')\n",
+    if (opt.spatialBackend != "grid" && opt.spatialBackend != "cgal") {
+        std::fprintf(stderr, "error: --spatial-backend must be grid or cgal (got '%s')\n",
                      opt.spatialBackend.c_str());
         return 2;
     }
@@ -419,15 +419,34 @@ int main(int argc, char** argv) {
         // algorithm timer) for validation, CDS diameter and the full
         // neighbour-set cross-check. Algorithms never see it unless it is the
         // selected backend.
+        // Memory accounting (memory-probe binary only), one common baseline:
+        //   H0 = live heap just before the representation build starts
+        //   Pb = absolute heap peak during the build
+        //   Hr = live heap after the build completes
+        //   Hs = live heap at solve() entry;  Ia = incremental peak above Hs
+        //   index_build_peak_bytes     = Pb - H0
+        //   final_representation_bytes = Hr - H0
+        //   pipeline_peak_bytes        = max(Pb, Hs + Ia) - H0
+        // When the backend is not the grid, the independent validation grid is
+        // built BEFORE H0, so correctness infrastructure is excluded.
+        std::uint64_t heapH0 = 0;
+        std::uint64_t heapPb = 0;
+        std::uint64_t heapHr = 0;
+        const bool gridIsBackend = opt.spatialBackend == "grid";
 #if MCDS_HEAP_TRACKING
-        bench::heapResetWindow();
-        const std::uint64_t gridHeapBase = bench::heapSnapshot().currentBytes;
+        if (gridIsBackend) {
+            bench::heapResetWindow();
+            heapH0 = bench::heapSnapshot().currentBytes;
+        }
 #endif
         t0 = Clock::now();
         mcds::GridSpatialIndex grid(points, opt.radius);
         const double gridMs = msSince(t0);
 #if MCDS_HEAP_TRACKING
-        const std::uint64_t gridHeapPeak = bench::heapSnapshot().peakBytes - gridHeapBase;
+        if (gridIsBackend) {
+            heapPb = bench::heapSnapshot().peakBytes;
+            heapHr = bench::heapSnapshot().currentBytes;
+        }
 #endif
 
         // --- T_spatial_index: the selected backend -------------------------
@@ -436,37 +455,28 @@ int main(int argc, char** argv) {
         mcds::SpatialIndex* backend = &grid;
         double indexMs = gridMs;
         double validationIndexMs = 0.0;  // grid shared when it is the backend
-        std::int64_t indexHeapPeak = -1;
-#if MCDS_HEAP_TRACKING
-        indexHeapPeak = static_cast<std::int64_t>(gridHeapPeak);
-#endif
 #if MCDS_WITH_CGAL
         std::unique_ptr<mcds::CgalSpatialIndex> cgal;
-        std::unique_ptr<bench::ExplicitAdjacencyIndex> explicitIndex;
-        if (opt.spatialBackend != "grid") {
+        if (!gridIsBackend) {
             validationIndexMs = gridMs;
 #if MCDS_HEAP_TRACKING
             bench::heapResetWindow();
-            const std::uint64_t base = bench::heapSnapshot().currentBytes;
+            heapH0 = bench::heapSnapshot().currentBytes;
 #endif
             t0 = Clock::now();
             cgal = std::make_unique<mcds::CgalSpatialIndex>(points);
-            if (opt.spatialBackend == "explicit") {
-                // Explicit representation: materialise the UDG once (CSR) from
-                // the CGAL range queries; construction includes the CGAL build.
-                explicitIndex = std::make_unique<bench::ExplicitAdjacencyIndex>(points, *cgal, opt.radius);
-                backend = explicitIndex.get();
-            } else {
-                backend = cgal.get();
-            }
+            backend = cgal.get();
             indexMs = msSince(t0);
 #if MCDS_HEAP_TRACKING
-            indexHeapPeak = static_cast<std::int64_t>(bench::heapSnapshot().peakBytes - base);
+            heapPb = bench::heapSnapshot().peakBytes;
+            heapHr = bench::heapSnapshot().currentBytes;
 #endif
-            cgal->resetStats();
         }
 #endif
-        (void)indexHeapPeak;
+
+        (void)heapH0;
+        (void)heapPb;
+        (void)heapHr;
 
         // --- Backend cross-check (untimed; every graph) ---------------------
         // The selected backend must return exactly the grid's neighbour set
@@ -528,19 +538,14 @@ int main(int argc, char** argv) {
             j.field("cells_y", static_cast<std::int64_t>(grid.cellsY()));
             j.field("index_bytes", static_cast<std::uint64_t>(grid.indexBytes()));
         }
-#if MCDS_WITH_CGAL
-        else if (explicitIndex) {
-            j.field("counter_semantics", "none_stored_adjacency");
-            j.field("index_bytes", static_cast<std::uint64_t>(explicitIndex->adjacencyBytes()));
-            j.field("adjacency_slots", explicitIndex->edgeSlots());
-            j.field("built_from", "cgal-kd-tree");
-        } else {
-            j.field("counter_semantics", "cgal_box_report");
+        else {
+            j.field("counter_semantics", "cgal_radial_report");
             j.null_field("index_bytes");  // not exposed by the CGAL API; see memory probes
         }
-#endif
 #if MCDS_HEAP_TRACKING
-        j.field("index_heap_peak_bytes", indexHeapPeak);
+        j.field("heap_baseline_bytes", heapH0);
+        j.field("index_build_peak_bytes", heapPb - heapH0);
+        j.field("final_representation_bytes", heapHr - heapH0);
 #endif
         j.endObject();
 
@@ -570,6 +575,15 @@ int main(int argc, char** argv) {
         j.field("stats_neighbor_queries", gs.neighborQueries);
         j.field("stats_candidates_examined", gs.candidatesExamined);
         j.field("stats_backend", backend->name());
+        // Count-only analytical estimate of what an explicit representation
+        // WOULD occupy; |E| comes from the degree pass (streaming radius
+        // queries, nothing stored). No explicit graph is ever built.
+        //   CSR: (n + 1) 64-bit offsets + 2|E| 32-bit neighbour ids
+        //   adjacency bit-matrix: ceil(n^2 / 8) bytes
+        j.field("explicit_csr_bytes_estimate",
+                static_cast<std::uint64_t>((gs.n + 1) * 8ull + 2ull * gs.edges * 4ull));
+        j.field("explicit_bitmatrix_bytes_estimate",
+                static_cast<std::uint64_t>((static_cast<std::uint64_t>(gs.n) * gs.n + 7ull) / 8ull));
         j.endObject();
 
         // --- Optional exact OPT (analysis only) ---------------------------
@@ -635,7 +649,6 @@ int main(int argc, char** argv) {
         mcds::SpatialIndex& algoIndex =
             opt.instrumentation == Instrumentation::None ? *backend
                                                          : static_cast<mcds::SpatialIndex&>(instrumented);
-        const bool hasCandidates = backend->name() != std::string("explicit-csr");
         std::unordered_map<std::string, long long> diameterByHash;
 
         j.key("runs");
@@ -691,7 +704,7 @@ int main(int argc, char** argv) {
                     j.field("t_algorithm_ms", static_cast<double>(ns) / 1e6);
                     j.field("neighbor_queries", qs.neighborQueries);
                     j.field("neighbors_returned", qs.neighborsReturned);
-                    if (hasCandidates) {
+                    {
                         // Backend-specific (see index.counter_semantics). For
                         // grid and CGAL the query point is always among the
                         // candidates and is the only one skipped before the
@@ -711,7 +724,10 @@ int main(int argc, char** argv) {
                         }
                     }
 #if MCDS_HEAP_TRACKING
-                    j.field("heap_peak_additional_bytes", heap.peakBytes - heapBaseline);
+                    j.field("heap_at_solve_entry_bytes", heapBaseline);
+                    j.field("algorithm_incremental_peak_bytes", heap.peakBytes - heapBaseline);
+                    j.field("pipeline_peak_bytes",
+                            std::max(heapPb, heap.peakBytes) - heapH0);  // max(Pb, Hs + Ia) - H0
                     j.field("heap_allocation_count", heap.allocationCount);
                     j.field("heap_allocated_bytes", heap.allocatedBytes);
                     j.field("rss_before_algorithm_bytes", rssBefore.currentRssBytes);
@@ -806,6 +822,11 @@ int main(int argc, char** argv) {
         j.endArray();
 
         writeMemory(j, "process_memory_final");
+#if MCDS_HEAP_TRACKING
+        // Whole-process maximum live heap: the implicit-graph guard asserts this
+        // stays far below what storing the UDG would need.
+        j.field("heap_lifetime_peak_bytes", bench::heapSnapshot().lifetimePeakBytes);
+#endif
         j.field("t_total_ms_before_output", msSince(processStart));
         j.endObject();
     } catch (const std::exception& e) {

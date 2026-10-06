@@ -4,7 +4,7 @@
 // # ExactSmallMCDS — TEST / ANALYSIS ONLY                                     #
 // #                                                                            #
 // # Exhaustive minimum connected dominating set for tiny n (default n <= 20). #
-// # May build an explicit adjacency list because n is intentionally tiny.     #
+// # Implicit graph only: adjacency comes from radius queries on the points.  #
 // # Must NEVER be used by production Marathe/Wan algorithms or large runs.    #
 // ###########################################################################
 

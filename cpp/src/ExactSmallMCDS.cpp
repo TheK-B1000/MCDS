@@ -4,6 +4,8 @@
 #include <queue>
 #include <string>
 
+#include "GridSpatialIndex.hpp"
+
 namespace mcds {
 namespace {
 
@@ -16,32 +18,39 @@ std::size_t popcount64(std::uint64_t mask) {
     return bits;
 }
 
-bool dominates(const std::vector<std::vector<std::size_t>>& adj, const std::vector<char>& selected) {
-    const std::size_t n = adj.size();
+/// Every vertex is selected or has a selected neighbour. One radius query per
+/// selected vertex; no adjacency is stored.
+bool dominates(const PointSet& points, const SpatialIndex& index, double radius, const std::vector<char>& selected,
+               std::vector<char>& dominated, std::vector<int>& neighbors) {
+    const std::size_t n = points.size();
+    std::fill(dominated.begin(), dominated.end(), 0);
     for (std::size_t i = 0; i < n; ++i) {
-        if (selected[i]) {
+        if (!selected[i]) {
             continue;
         }
-        bool ok = false;
-        for (const std::size_t j : adj[i]) {
-            if (selected[j]) {
-                ok = true;
-                break;
-            }
+        dominated[i] = 1;
+        index.radiusQuery(points.idAt(i), radius, neighbors);
+        for (const int id : neighbors) {
+            dominated[points.indexOf(id)] = 1;
         }
-        if (!ok) {
+    }
+    for (std::size_t i = 0; i < n; ++i) {
+        if (!dominated[i]) {
             return false;
         }
     }
     return true;
 }
 
-bool selectedConnected(const std::vector<std::vector<std::size_t>>& adj, const std::vector<char>& selected,
-                       std::size_t selectedCount) {
+/// The selected vertices induce a connected subgraph: BFS over selected
+/// vertices with on-demand radius queries; no adjacency is stored.
+bool selectedConnected(const PointSet& points, const SpatialIndex& index, double radius,
+                       const std::vector<char>& selected, std::size_t selectedCount, std::vector<char>& visited,
+                       std::vector<int>& neighbors) {
     if (selectedCount == 0) {
         return false;
     }
-    const std::size_t n = adj.size();
+    const std::size_t n = points.size();
     std::size_t start = n;
     for (std::size_t i = 0; i < n; ++i) {
         if (selected[i]) {
@@ -49,7 +58,7 @@ bool selectedConnected(const std::vector<std::vector<std::size_t>>& adj, const s
             break;
         }
     }
-    std::vector<char> visited(n, 0);
+    std::fill(visited.begin(), visited.end(), 0);
     std::queue<std::size_t> q;
     visited[start] = 1;
     q.push(start);
@@ -58,7 +67,9 @@ bool selectedConnected(const std::vector<std::vector<std::size_t>>& adj, const s
         const std::size_t u = q.front();
         q.pop();
         ++reached;
-        for (const std::size_t v : adj[u]) {
+        index.radiusQuery(points.idAt(u), radius, neighbors);
+        for (const int id : neighbors) {
+            const std::size_t v = points.indexOf(id);
             if (selected[v] && !visited[v]) {
                 visited[v] = 1;
                 q.push(v);
@@ -80,17 +91,15 @@ ExactSmallResult exactSmallMCDS(const PointSet& points, double radius, std::size
                                     std::to_string(maxN));
     }
 
-    // Explicit adjacency ONLY inside this analysis oracle.
-    const double r2 = radius * radius;
-    std::vector<std::vector<std::size_t>> adj(n);
-    for (std::size_t i = 0; i < n; ++i) {
-        for (std::size_t j = i + 1; j < n; ++j) {
-            if (distanceSquared(points[i], points[j]) <= r2) {
-                adj[i].push_back(j);
-                adj[j].push_back(i);
-            }
-        }
-    }
+    // Implicit graph only: adjacency is recovered on demand from the points
+    // through the SpatialIndex interface, exactly like every algorithm. The
+    // grid stores point-index buckets (O(n)), never edges.
+    const GridSpatialIndex index(points, radius > 0.0 ? radius : 1.0);
+
+    std::vector<char> selected(n, 0);
+    std::vector<char> dominated(n, 0);
+    std::vector<char> visited(n, 0);
+    std::vector<int> neighbors;
 
     const std::uint64_t limit = 1ull << static_cast<unsigned>(n);
     for (std::size_t k = 1; k <= n; ++k) {
@@ -98,24 +107,23 @@ ExactSmallResult exactSmallMCDS(const PointSet& points, double radius, std::size
             if (popcount64(mask) != k) {
                 continue;
             }
-            std::vector<char> selected(n, 0);
-            std::vector<int> ids;
-            ids.reserve(k);
             for (std::size_t i = 0; i < n; ++i) {
-                if (mask & (1ull << i)) {
-                    selected[i] = 1;
-                    ids.push_back(points.idAt(i));
-                }
+                selected[i] = (mask & (1ull << i)) ? 1 : 0;
             }
-            if (!dominates(adj, selected)) {
+            if (!dominates(points, index, radius, selected, dominated, neighbors)) {
                 continue;
             }
-            if (!selectedConnected(adj, selected, k)) {
+            if (!selectedConnected(points, index, radius, selected, k, visited, neighbors)) {
                 continue;
             }
             ExactSmallResult out;
             out.optSize = k;
-            out.selectedIds = std::move(ids);
+            out.selectedIds.reserve(k);
+            for (std::size_t i = 0; i < n; ++i) {
+                if (selected[i]) {
+                    out.selectedIds.push_back(points.idAt(i));
+                }
+            }
             return out;
         }
     }

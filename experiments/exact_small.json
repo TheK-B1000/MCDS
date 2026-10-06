@@ -1,7 +1,7 @@
 {
   "study_id": "exact_small",
   "study_seed": 20261007,
-  "description": "RQ10: empirical approximation ratio |D|/OPT on instances small enough for exhaustive exact search (n <= 16). Results describe these small instances only and say nothing about the papers' theoretical ratios.",
+  "description": "RQ10: empirical approximation ratio |D|/OPT on instances small enough for exhaustive exact search (n <= 16). Results describe these small instances only and say nothing about the papers' theoretical ratios. Dumbbell cells whose locked domain is not well defined (area n/density <= neck area w*l, or square side a < neck width w) are excluded before generation and recorded as generation_infeasible_under_protocol; with w = 1, l = 3 only n = 16, density 3 remains.",
   "algorithms": [
     "marathe",
     "wan",
@@ -15,7 +15,7 @@
       "clustered",
       "perturbed_grid",
       "corridor",
-      "cluster_bridge"
+      "dumbbell"
     ],
     "sizes": [
       10,
@@ -31,17 +31,16 @@
     "replicates": 24,
     "geometry_parameters": {
       "clustered": {
-        "clusters": 2,
-        "spread": 0.8
+        "clusters": 4,
+        "background_fraction": 0.5,
+        "spread_relative": 0.05
       },
       "corridor": {
         "corridor_width": 1.5
       },
-      "cluster_bridge": {
-        "clusters": 2,
-        "spread": 0.45,
-        "bridge_fraction": 0.25,
-        "bridge_width": 0.6
+      "dumbbell": {
+        "neck_width": 1.0,
+        "neck_length": 3.0
       },
       "perturbed_grid": {
         "jitter": 0.15

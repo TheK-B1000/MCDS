@@ -33,9 +33,11 @@ METRICS_VS = [
     ("cds_fraction", "CDS fraction |D| / |V|", False),
     ("neighbor_queries", "Range-neighbour queries (log scale)", True),
     ("grid_candidates_examined", "Grid: candidate points in scanned cells (log scale)", True),
-    ("cgal_box_candidates", "CGAL: points reported by the box search (log scale)", True),
+    ("cgal_range_candidates", "CGAL: points reported by the radial search (log scale)", True),
     ("cds_diameter", "CDS diameter (hops)", False),
-    ("heap_peak_additional_bytes", "Algorithm heap peak (bytes, log scale)", True),
+    ("algorithm_incremental_peak_bytes", "Algorithm incremental heap peak (bytes, log)", True),
+    ("final_representation_bytes", "Implicit representation footprint (bytes, log)", True),
+    ("explicit_csr_bytes_estimate", "Explicit CSR estimate, never built (bytes, log)", True),
     ("empirical_ratio", "Empirical ratio |D| / OPT", False),
 ]
 

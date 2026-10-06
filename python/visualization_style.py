@@ -29,7 +29,6 @@ class VisualizationColors:
     cds_edge_marker: str
     core: str  # dark / black
     connector: str  # blue
-    edge: str  # CDS-to-CDS edge stroke
     text: str
     muted: str
     spine: str
@@ -43,7 +42,6 @@ LIGHT = VisualizationColors(
     cds_edge_marker="#1e3a8a",
     core="#111827",
     connector="#2563eb",
-    edge="#4b5563",
     text="#1f2933",
     muted="#4a5560",
     spine="#cbd2d9",
@@ -57,7 +55,6 @@ DARK = VisualizationColors(
     cds_edge_marker="#1d4ed8",
     core="#e5e7eb",
     connector="#60a5fa",
-    edge="#9ca3af",
     text="#e6edf3",
     muted="#9da7b3",
     spine="#3c4048",
@@ -123,20 +120,18 @@ def role_for_vertex(
 def legend_labels(algorithm: str, color_mode: str, *, has_roles: bool) -> list[tuple[str, str]]:
     """Return ``(role_key, display_label)`` pairs for the legend.
 
-    ``role_key`` is one of ordinary / cds / core / connector / edge.
+    ``role_key`` is one of ordinary / cds / core / connector (points only; no edges are drawn).
     """
     algo = (algorithm or "").strip().lower()
     if color_mode == COLOR_MODE_FINAL or not has_roles:
         items = [
             (ROLE_ORDINARY, "Ordinary point"),
             ("cds", "CDS node"),
-            ("edge", "CDS edge"),
         ]
         if color_mode == COLOR_MODE_ROLES and not has_roles:
             items = [
                 (ROLE_ORDINARY, "Ordinary point"),
                 (ROLE_CORE, "Selected (roles unavailable)"),
-                ("edge", "CDS edge"),
             ]
         return items
 
@@ -145,13 +140,11 @@ def legend_labels(algorithm: str, color_mode: str, *, has_roles: bool) -> list[t
             (ROLE_ORDINARY, "Ordinary point"),
             (ROLE_CORE, "MIS / black node"),
             (ROLE_CONNECTOR, "Steiner connector / blue node"),
-            ("edge", "CDS edge"),
         ]
     return [
         (ROLE_ORDINARY, "Ordinary point"),
         (ROLE_CORE, "Core selected node"),
         (ROLE_CONNECTOR, "Connector node"),
-        ("edge", "CDS edge"),
     ]
 
 

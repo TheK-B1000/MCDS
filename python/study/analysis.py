@@ -40,9 +40,10 @@ BOOTSTRAP_B = 2000
 SUMMARY_METRICS = (
     "t_algorithm_ms", "cds_size", "cds_fraction", "cds_diameter", "core_count", "connector_count",
     "neighbor_queries", "neighbors_returned", "grid_candidates_examined", "grid_distance_computations",
-    "cgal_box_candidates", "cgal_exact_distance_evaluations",
-    "heap_peak_additional_bytes", "t_spatial_index_ms", "t_index_plus_algorithm_ms", "index_bytes",
-    "index_heap_peak_bytes", "empirical_ratio",
+    "cgal_range_candidates", "cgal_exact_distance_evaluations",
+    "algorithm_incremental_peak_bytes", "final_representation_bytes", "index_build_peak_bytes",
+    "pipeline_peak_bytes", "t_spatial_index_ms", "t_index_plus_algorithm_ms", "index_bytes",
+    "explicit_csr_bytes_estimate", "explicit_bitmatrix_bytes_estimate", "empirical_ratio",
 )
 # Paired metrics: lower is better for all of them.
 PAIRED_METRICS = ("t_algorithm_ms", "cds_size", "cds_fraction", "cds_diameter")
@@ -149,7 +150,11 @@ def graph_level(raw: list[dict[str, str]], datasets: list[dict[str, str]]) -> li
             "t_index_plus_algorithm_ms": ((_f(first.get("t_spatial_index_ms")) or 0.0) + statistics.median(times))
             if times and _f(first.get("t_spatial_index_ms")) is not None else None,
             "index_bytes": _f(first.get("index_bytes")),
-            "index_heap_peak_bytes": _f(mem[0].get("index_heap_peak_bytes")) if mem else None,
+            "index_build_peak_bytes": _f(mem[0].get("index_build_peak_bytes")) if mem else None,
+            "final_representation_bytes": _f(mem[0].get("final_representation_bytes")) if mem else None,
+            "pipeline_peak_bytes": _f(mem[0].get("pipeline_peak_bytes")) if mem else None,
+            "explicit_csr_bytes_estimate": _f(d.get("explicit_csr_bytes_estimate")),
+            "explicit_bitmatrix_bytes_estimate": _f(d.get("explicit_bitmatrix_bytes_estimate")),
             "cds_size": _f(first["cds_size"]) if len(sizes) == 1 else None,
             "cds_size_consistent": len(sizes) == 1,
             "cds_fraction": _f(first["cds_fraction"]) if len(sizes) == 1 else None,
@@ -159,11 +164,11 @@ def graph_level(raw: list[dict[str, str]], datasets: list[dict[str, str]]) -> li
             "neighbors_returned": _f(first.get("neighbors_returned")),
             "grid_candidates_examined": _f(first.get("grid_candidates_examined")),
             "grid_distance_computations": _f(first.get("grid_distance_computations")),
-            "cgal_box_candidates": _f(first.get("cgal_box_candidates")),
+            "cgal_range_candidates": _f(first.get("cgal_range_candidates")),
             "cgal_exact_distance_evaluations": _f(first.get("cgal_exact_distance_evaluations")),
             "all_valid": bool(validated) and all(r["valid_solution"] == "true" for r in validated),
             "opt_size": _f(first["opt_size"]), "empirical_ratio": _f(first["empirical_ratio"]),
-            "heap_peak_additional_bytes": _f(mem[0]["heap_peak_additional_bytes"]) if mem else None,
+            "algorithm_incremental_peak_bytes": _f(mem[0]["algorithm_incremental_peak_bytes"]) if mem else None,
             "grid_cells_examined": _f(cnt[0].get("grid_cells_examined")) if cnt else None,
             "max_neighbors_per_query": _f(cnt[0].get("max_neighbors_per_query")) if cnt else None,
         })
@@ -258,7 +263,8 @@ def backend_paired(gl: list[dict[str, Any]]) -> list[dict[str, Any]]:
         backends = sorted({b for g in graphs.values() for b in g})
         for a, b in combinations(backends, 2):
             for metric in ("t_algorithm_ms", "cds_size", "t_spatial_index_ms", "t_index_plus_algorithm_ms",
-                           "index_heap_peak_bytes", "heap_peak_additional_bytes"):
+                           "final_representation_bytes", "index_build_peak_bytes", "pipeline_peak_bytes",
+                           "algorithm_incremental_peak_bytes"):
                 pairs = [(g[a][metric], g[b][metric]) for g in graphs.values()
                          if a in g and b in g and g[a].get(metric) is not None and g[b].get(metric) is not None]
                 if pairs:
@@ -293,7 +299,7 @@ def precision(gl: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return out
 
 
-PRECISION_CURVE_K = (5, 10, 15, 20, 25, 30, 40, 50, 75, 100)
+PRECISION_CURVE_K = (5, 10, 15, 20, 25, 28, 30, 36, 40, 44, 50, 52, 75, 100)  # incl. the locked ladder 20/28/36/44/52
 
 
 def precision_curve(gl: list[dict[str, Any]], algorithms: Iterable[str]) -> list[dict[str, Any]]:

@@ -49,6 +49,18 @@ def cmd_plan(args) -> int:
     print(f"study_id      {cfg['study_id']}  (config sha256 {config_mod.config_sha256(cfg)[:12]})")
     print(f"algorithms    {cfg['algorithms']}")
     print(f"datasets      {len(planned)} planned graphs in {len({p.cell_id for p in planned})} cells")
+    infeasible = {}
+    for p in planned:
+        ok, why = datasets.generation_feasibility(p.geometry, int(p.n or 0), float(p.density_target or 0.0),
+                                                  p.radius, p.params)
+        if ok and cfg.get("feasibility_calibration"):
+            ok, why = datasets.calibration_feasibility(cfg["feasibility_calibration"], REPO_ROOT, p)
+        if not ok:
+            infeasible.setdefault(p.cell_id, why)
+    if infeasible:
+        print(f"infeasible    {len(infeasible)} cell(s) excluded before generation (generation_infeasible_under_protocol; reason per cell):")
+        for cell, why in sorted(infeasible.items()):
+            print(f"  {cell}: {why}")
     print(f"connectivity  {cfg['connectivity_rule']}")
     print(f"spatial       {config_mod.backends(cfg)}  (primary final-study backend: cgal)")
     print(f"timing        reps={t['repetitions']} warmups={t['warmups']} instrumentation={t['instrumentation']} "

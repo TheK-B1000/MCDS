@@ -1,0 +1,34 @@
+{
+  "name": "D3 clustered-generator freeze gates v1",
+  "recorded_utc": "2026-10-06T12:01:44Z",
+  "recorded_by": "decided by the project owner; recorded before the clustered calibration results were inspected",
+  "disclosure": "When these gates were recorded, generator_calibration_v1 had already computed the clustered cells (they were in its run log), but neither the project owner nor the assistant had viewed them. Uniform cells (the reference) and some cluster_bridge cells had been seen.",
+  "calibration_file": "experiments/calibration/generator_calibration_v1.json",
+  "primary_cells": {"geometries": ["uniform", "clustered", "perturbed_grid", "corridor", "cluster_bridge"],
+                    "sizes": [500, 1000, 2000, 5000, 10000], "densities": [8.0, 12.0]},
+  "gates": {
+    "G1_connectivity": {
+      "applies_to": "every geometry, every primary cell",
+      "rule": "connected >= 18 of 24 validation graphs",
+      "min_connected": 18, "of": 24,
+      "note": "Wilson 95% CI is reported but is not a pass/fail condition"
+    },
+    "G2_clustering_identity": {
+      "applies_to": "clustered (D3) versus uniform at the same (n, density); clustering share is reported for all geometries but other geometries are not required to look clustered",
+      "rule": "D3 median clustering share >= 1.5 x uniform median, AND D3 Q1 > uniform Q3",
+      "min_median_ratio": 1.5
+    },
+    "G3_degree_regime": {
+      "applies_to": "clustered (D3) versus uniform",
+      "rule": "R(n) = mean degree D3 / mean degree uniform (cell medians of per-graph mean degree); R(n) <= 4 in every cell, AND within each density max_n R(n) / min_n R(n) <= 2 over all tested n",
+      "max_ratio": 4.0, "max_ratio_spread": 2.0
+    },
+    "sparse_admission": {
+      "applies_to": "density-5 cells of the optional sparse study",
+      "rule": "connected >= 18 of 24 validation graphs (same as G1)",
+      "min_connected": 18, "of": 24
+    }
+  },
+  "on_failure": "A failing gate is never loosened. If G3 (or G1/G2) fails for D3, the generator is redesigned (e.g. hotspot count growing with n while keeping the 50% background, or sigma scaled ~ sqrt(n)) and re-calibrated on new independent validation seeds against these same gates.",
+  "expectation_recorded_in_advance": "With 4 hotspots, fixed sigma = 0.8 and n/8 points per hotspot, same-hotspot degree grows ~ Theta(n) while uniform degree stays O(1), so R(n) is expected to grow with n and G3 is expected to fail."
+}

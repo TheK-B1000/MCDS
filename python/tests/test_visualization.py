@@ -21,7 +21,7 @@ for path in (_REPO_ROOT, _PYTHON_DIR):
 from generators import write_csv  # noqa: E402
 from visualization import (  # noqa: E402
     VisualizationError,
-    cds_edges,
+    create_figure,
     downsample_ordinary_indices,
     load_metadata_sidecar,
     load_result_json,
@@ -135,21 +135,26 @@ class VisualizationTests(unittest.TestCase):
                     "selected_ids": [0, 1],
                 },
             )
-            render(points, result, save=png, show=False, show_cds_edges=True)
+            render(points, result, save=png, show=False)
             self.assertTrue(png.is_file())
             self.assertGreater(png.stat().st_size, 1000)
 
-    def test_cds_edges_only_within_radius(self) -> None:
+    def test_visualization_draws_no_edges(self) -> None:
+        # Hard invariant: the plot never computes adjacency, not even between
+        # CDS vertices; the edge API and CLI flags no longer exist.
+        import visualization
+
+        self.assertFalse(hasattr(visualization, "cds_edges"))
+        flags = {a for act in visualization.build_arg_parser()._actions for a in act.option_strings}
+        self.assertFalse({"--show-cds-edges", "--no-cds-edges", "--edge-k-limit"} & flags)
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
             points = tmp_path / "points.csv"
             result = tmp_path / "result.json"
             _write_points(points, [(0.0, 0.0), (1.0, 0.0), (3.0, 0.0)])
             _write_result(result, {"radius": 1.0, "selected_ids": [0, 1, 2]})
-            data = prepare_plot_data(points, result)
-            edges = cds_edges(data, enabled=True)
-            # Only 0-1 is within radius 1.
-            self.assertEqual(len(edges), 1)
+            fig = create_figure(prepare_plot_data(points, result))
+            self.assertEqual(len(fig.axes[0].get_lines()), 0)
 
     def test_large_n_downsampling_determinism(self) -> None:
         n = 5000

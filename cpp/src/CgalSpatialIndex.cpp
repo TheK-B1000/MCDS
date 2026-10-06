@@ -9,7 +9,7 @@
 
 #include <boost/version.hpp>
 
-#include <CGAL/Fuzzy_iso_box.h>
+#include <CGAL/Fuzzy_sphere.h>
 #include <CGAL/Kd_tree.h>
 #include <CGAL/Search_traits_2.h>
 #include <CGAL/Search_traits_adapter.h>
@@ -26,7 +26,7 @@ using PointMap = CGAL::Pointer_property_map<CgalPoint>::const_type;
 using BaseTraits = CGAL::Search_traits_2<Kernel>;
 using Traits = CGAL::Search_traits_adapter<std::size_t, PointMap, BaseTraits>;
 using Tree = CGAL::Kd_tree<Traits>;
-using Box = CGAL::Fuzzy_iso_box<Traits>;
+using Sphere = CGAL::Fuzzy_sphere<Traits>;
 
 }  // namespace
 
@@ -65,18 +65,21 @@ void CgalSpatialIndex::radiusQueryImpl(int pointId, double radius, std::vector<i
     const Point& p = (*points_)[pi];
     ++stats_.neighborQueries;
 
-    // Candidate box half-side. The exact predicate below accepts q only if
-    // dx*dx + dy*dy <= r*r in floating point, which implies |dx|, |dy| <= r
-    // up to rounding. The margin covers that rounding and the rounding of
-    // p.x +/- half itself, so the box is a strict superset of the accepted set.
+    // Candidate retrieval: CGAL radial range search (Fuzzy_sphere, eps = 0)
+    // with radius r' slightly larger than r. CGAL's sphere is NOT used as the
+    // adjacency test: in CGAL 6.1.2 its contains() is inclusive (<= r'^2) but
+    // contains_point_given_as_coordinates() is exclusive (< r'^2), and which
+    // one runs depends on the kd-tree's internal path. Every point the exact
+    // predicate below can accept has squared distance <= r^2 up to rounding,
+    // which is strictly below r'^2, so it is reported on either path. The
+    // margin therefore only adds candidates (rejected below), never edges.
     const double scale = std::abs(p.x) + std::abs(p.y) + radius;
-    const double half = radius * (1.0 + 1e-9) + 8.0 * std::numeric_limits<double>::epsilon() * scale;
-    const Box box(CgalPoint(p.x - half, p.y - half), CgalPoint(p.x + half, p.y + half), 0.0,
-                  impl_->tree->traits());
+    const double searchRadius = radius * (1.0 + 1e-9) + 8.0 * std::numeric_limits<double>::epsilon() * scale;
+    const Sphere sphere(CgalPoint(p.x, p.y), searchRadius, 0.0, impl_->tree->traits());
 
     std::vector<std::size_t>& cand = impl_->candidates;
     cand.clear();
-    impl_->tree->search(std::back_inserter(cand), box);
+    impl_->tree->search(std::back_inserter(cand), sphere);
     stats_.candidatesExamined += cand.size();
 
     const double radiusSquared = radius * radius;

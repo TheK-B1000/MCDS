@@ -1,0 +1,48 @@
+{
+  "name": "Generator definitions v2 (locked before implementation and before any candidate calibration)",
+  "recorded_utc": "2026-10-06T13:05:00Z",
+  "recorded_utc_correction": {
+    "original_recorded_utc": "2026-10-06T13:05:00Z",
+    "correction": "The recorded_utc value above was entered manually and is incorrect (it is later than the file's actual creation and later than the v2 calibration). It is kept unchanged for provenance.",
+    "actual_ordering": "File created ~2026-10-06T12:12:20Z; edited once at ~12:13:30Z to add the parameter-name mapping (neck_width/neck_length, spread_relative, geometry_key) with no change to any rule or value; first v2 calibration output written at 12:23:10Z. Evidence: file modification times and the session transcript.",
+    "added_utc": "2026-10-06 (after the v2 calibration; this note changes no rule)"
+  },
+  "principle": "As n grows, preserve the local spatial regime (thermodynamic random-geometric-graph scaling) instead of packing more points into a fixed-size pattern. L = sqrt(n / density) is the side of the square window of area n / density used by every geometry.",
+  "clustered_D3_v2": {
+    "definition": "Window [0, L] x [0, L]. Draw 4 hotspot centres uniform in the window; then round(0.5 n) background points uniform in the window; then the remaining points assigned round-robin to the hotspots, each Gaussian around its centre with sigma = s * L, redrawn (same rng stream) until it falls inside the window (finite-window process).",
+    "fixed": {
+      "clusters": 4,
+      "background_fraction": 0.5,
+      "window_restricted_hotspots": true
+    },
+    "candidate_ladder_s": [
+      0.025,
+      0.035,
+      0.05
+    ],
+    "selection_rule": "Among ladder values passing gates_v1 G1, G2, G3 and requirements R1, R2: choose the one with the highest minimum (over primary cells) G2 median clustering ratio (most clustered while scale-stable). If none passes, report; no further ladder values are added.",
+    "naming": "Gaussian hotspot-plus-background model (Thomas-process-inspired); not a Thomas point process",
+    "parameter": "spread_relative = s"
+  },
+  "bottleneck_dumbbell_v2": {
+    "definition": "Domain = left square [0, a] x [0, a] + corridor [a, a + l] x [a/2 - w/2, a/2 + w/2] + right square [a + l, 2a + l] x [0, a], with a = sqrt((n / density - w * l) / 2), so total area = n / density. Points uniform over the domain at intensity = density: round(n * w * l / A) corridor points, the rest split equally between the squares (left gets the extra one). Draw order: left square, corridor, right square.",
+    "fixed": {
+      "neck_width": 1.0,
+      "neck_length": 3.0,
+      "units": "communication radius r = 1"
+    },
+    "calibrations_allowed": 1,
+    "fallback": "If it fails any of gates_v1 G1, requirements R1, R2, R3: cluster_bridge leaves the balanced primary factorial and becomes a separate bottleneck stress-test study; the dumbbell is not tweaked.",
+    "replaces": "cluster_bridge in the primary factorial if it passes (the v1 cluster_bridge generator is kept, unchanged, for the stress-test fallback and regression)",
+    "parameter_naming_note": "generator parameters are named neck_width / neck_length (the corridor geometry already uses corridor_width); values unchanged from the locked w = 1.0, l = 3.0",
+    "geometry_key": "dumbbell"
+  },
+  "calibration": {
+    "seeds_per_cell": 24,
+    "calibration_seed": 20261107,
+    "independence": "new calibration seed; seed namespace 'calibration' (disjoint from study seeds and from generator_calibration_v1's seed 20261006)",
+    "cells": "sizes 500, 1000, 2000, 5000, 10000 x densities 8, 12 (primary) and 5 (sparse admission)",
+    "reference": "uniform re-run in the same calibration on the same new seeds",
+    "gates": "experiments/calibration/gates_v1.json and primary_geometry_requirements_v1.json, unchanged"
+  }
+}

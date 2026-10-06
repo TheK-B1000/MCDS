@@ -12,7 +12,7 @@ Violations (study FAILS):
 
   V7  a row was produced with a spatial backend the config did not request
   V8  a graph's backend cross-check against the independent grid was not
-      "identical" (CGAL / explicit neighbour sets must equal the grid's)
+      "identical" (CGAL neighbour sets must equal the grid's)
   V9  the same algorithm returned a different CDS on the same graph under
       different spatial backends (backend choice changed the graph)
 

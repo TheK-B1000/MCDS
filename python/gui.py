@@ -114,7 +114,6 @@ class McdsGui(tk.Tk):
         self.var_corridor_width = tk.DoubleVar(value=2.0)
         self.var_bridge_fraction = tk.DoubleVar(value=0.15)
         self.var_bridge_width = tk.DoubleVar(value=0.5)
-        self.var_show_edges = tk.BooleanVar(value=True)
         self.var_dark_mode = tk.BooleanVar(value=True)
         self.var_color_mode = tk.StringVar(value=COLOR_MODE_FINAL)
         self.var_status = tk.StringVar(value="")
@@ -198,12 +197,6 @@ class McdsGui(tk.Tk):
         row("Corridor width", self.ent_corridor, 13)
         row("Bridge fraction", self.ent_bridge_frac, 14)
         row("Bridge width", self.ent_bridge_width, 15)
-        ttk.Checkbutton(
-            controls,
-            text="Show CDS edges",
-            variable=self.var_show_edges,
-            command=self._on_show_edges_toggled,
-        ).grid(row=16, column=0, columnspan=2, sticky="w", pady=4)
         ttk.Checkbutton(
             controls,
             text="Dark mode",
@@ -359,13 +352,6 @@ class McdsGui(tk.Tk):
         else:
             self._init_empty_plot()
 
-    def _on_show_edges_toggled(self) -> None:
-        if self.csv_path.is_file() and self.result_path.is_file():
-            try:
-                self._refresh_plot()
-            except VisualizationError:
-                pass
-
     def _on_color_mode_toggled(self) -> None:
         if self.csv_path.is_file() and self.result_path.is_file():
             try:
@@ -509,7 +495,6 @@ class McdsGui(tk.Tk):
         data = prepare_plot_data(self.csv_path, self.result_path)
         fig = create_figure(
             data,
-            show_cds_edges=self.var_show_edges.get(),
             dark=self.var_dark_mode.get(),
             color_mode=self.var_color_mode.get() or COLOR_MODE_FINAL,
         )

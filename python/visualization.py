@@ -48,9 +48,8 @@ from visualization_style import (  # noqa: E402
     roles_available,
 )
 
-# CDS edge drawing is skipped when the selected set exceeds this size unless
-# the caller forces it. Avoids an accidental O(k^2) visualization cost.
-DEFAULT_EDGE_K_LIMIT = 2000
+# The plot shows points only. No edge (between CDS vertices or otherwise) is
+# ever computed or drawn: the UDG is never materialised, not even for display.
 DEFAULT_MAX_RENDER_POINTS = 50_000
 
 
@@ -181,55 +180,6 @@ def downsample_ordinary_indices(
     return sampled
 
 
-def cds_edges(
-    data: PlotData,
-    *,
-    enabled: bool = True,
-    k_limit: int = DEFAULT_EDGE_K_LIMIT,
-) -> list[tuple[float, float, float, float]]:
-    """Return CDS-to-CDS edge segments within ``radius``.
-
-    Uses a uniform grid over the selected points so cost is near-linear in k
-    for bounded density, not a blind O(k^2) double loop when k is large.
-    """
-    k = len(data.selected_ids)
-    if not enabled or k < 2:
-        return []
-    if k > k_limit:
-        return []
-
-    id_to_xy = {pid: (x, y) for pid, x, y in zip(data.point_ids, data.xs, data.ys)}
-    selected = [(sid, id_to_xy[sid]) for sid in data.selected_ids]
-    radius = data.radius
-    radius_sq = radius * radius
-    cell = max(radius, 1e-12)
-
-    buckets: dict[tuple[int, int], list[tuple[int, float, float]]] = {}
-    for sid, (x, y) in selected:
-        key = (int(math.floor(x / cell)), int(math.floor(y / cell)))
-        buckets.setdefault(key, []).append((sid, x, y))
-
-    edges: list[tuple[float, float, float, float]] = []
-    seen: set[tuple[int, int]] = set()
-    for (gx, gy), members in buckets.items():
-        for dx in (-1, 0, 1):
-            for dy in (-1, 0, 1):
-                others = buckets.get((gx + dx, gy + dy))
-                if not others:
-                    continue
-                for a_id, ax, ay in members:
-                    for b_id, bx, by in others:
-                        if a_id >= b_id:
-                            continue
-                        pair = (a_id, b_id)
-                        if pair in seen:
-                            continue
-                        if (ax - bx) * (ax - bx) + (ay - by) * (ay - by) <= radius_sq:
-                            seen.add(pair)
-                            edges.append((ax, ay, bx, by))
-    return edges
-
-
 def algorithm_display_name(data: PlotData) -> str:
     raw = data.result.get("algorithm", "unknown")
     algo = str(raw if raw is not None else "unknown").strip()
@@ -310,9 +260,7 @@ def data_axis_limits(xs: list[float], ys: list[float]) -> tuple[float, float, fl
 def create_figure(
     data: PlotData,
     *,
-    show_cds_edges: bool = True,
     max_render_points: int = DEFAULT_MAX_RENDER_POINTS,
-    edge_k_limit: int = DEFAULT_EDGE_K_LIMIT,
     downsample_seed: int = 0,
     dark: bool = False,
     color_mode: str = COLOR_MODE_FINAL,
@@ -400,17 +348,6 @@ def create_figure(
         edge = colors.cds_edge_marker if effective_mode == COLOR_MODE_FINAL else colors.core
         _scatter_selected(list(data.selected_ids), face, edge)
 
-    edges = cds_edges(data, enabled=show_cds_edges, k_limit=edge_k_limit)
-    for x0, y0, x1, y1 in edges:
-        ax.plot(
-            [x0, x1],
-            [y0, y1],
-            color=colors.edge,
-            alpha=0.40 if dark else 0.35,
-            linewidth=0.8,
-            zorder=2,
-        )
-
     ax.set_aspect("equal", adjustable="box")
     xmin, xmax, ymin, ymax = data_axis_limits(data.xs, data.ys)
     ax.set_xlim(xmin, xmax)
@@ -463,27 +400,21 @@ def create_figure(
         "cds": colors.cds,
         ROLE_CORE: colors.core,
         ROLE_CONNECTOR: colors.connector,
-        "edge": colors.edge,
     }
     for key, label in legend_items:
-        if key == "edge" and not show_cds_edges:
-            continue
-        if key == "edge":
-            handles.append(Line2D([0], [0], color=swatch[key], linewidth=1.5))
-        else:
-            size = ORDINARY_POINT_SIZE if key == ROLE_ORDINARY else SELECTED_POINT_SIZE
-            handles.append(
-                Line2D(
-                    [0],
-                    [0],
-                    marker="o",
-                    color="none",
-                    markerfacecolor=swatch[key],
-                    markeredgecolor=swatch[key],
-                    markersize=max(4, size / 4),
-                    linestyle="None",
-                )
+        size = ORDINARY_POINT_SIZE if key == ROLE_ORDINARY else SELECTED_POINT_SIZE
+        handles.append(
+            Line2D(
+                [0],
+                [0],
+                marker="o",
+                color="none",
+                markerfacecolor=swatch[key],
+                markeredgecolor=swatch[key],
+                markersize=max(4, size / 4),
+                linestyle="None",
             )
+        )
         labels.append(label)
     if handles:
         legend = ax.legend(
@@ -513,23 +444,17 @@ def render(
     *,
     save: str | Path | None = None,
     show: bool = True,
-    show_cds_edges: bool | None = None,
     max_render_points: int = DEFAULT_MAX_RENDER_POINTS,
-    edge_k_limit: int = DEFAULT_EDGE_K_LIMIT,
     downsample_seed: int = 0,
     color_mode: str = COLOR_MODE_FINAL,
     dark: bool = False,
 ):
     """High-level entry used by CLI and GUI."""
     data = prepare_plot_data(points_path, result_path)
-    if show_cds_edges is None:
-        show_cds_edges = len(data.selected_ids) <= edge_k_limit
 
     fig = create_figure(
         data,
-        show_cds_edges=show_cds_edges,
         max_render_points=max_render_points,
-        edge_k_limit=edge_k_limit,
         downsample_seed=downsample_seed,
         dark=dark,
         color_mode=color_mode,
@@ -561,19 +486,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--save", default=None, help="optional PNG/SVG output path")
     parser.add_argument("--no-show", action="store_true", help="do not open an interactive window")
     parser.add_argument(
-        "--show-cds-edges",
-        dest="show_cds_edges",
-        action="store_true",
-        default=None,
-        help="draw edges between adjacent CDS vertices",
-    )
-    parser.add_argument(
-        "--no-cds-edges",
-        dest="show_cds_edges",
-        action="store_false",
-        help="do not draw CDS edges",
-    )
-    parser.add_argument(
         "--max-render-points",
         type=int,
         default=DEFAULT_MAX_RENDER_POINTS,
@@ -584,12 +496,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
         choices=list(COLOR_MODES),
         default=COLOR_MODE_FINAL,
         help="Final CDS vs Algorithm roles coloring",
-    )
-    parser.add_argument(
-        "--edge-k-limit",
-        type=int,
-        default=DEFAULT_EDGE_K_LIMIT,
-        help="skip CDS edge drawing when |CDS| exceeds this",
     )
     return parser
 
@@ -603,9 +509,7 @@ def main(argv: list[str] | None = None) -> int:
             args.result,
             save=args.save,
             show=not args.no_show,
-            show_cds_edges=args.show_cds_edges,
             max_render_points=args.max_render_points,
-            edge_k_limit=args.edge_k_limit,
             color_mode=args.color_mode,
         )
     except VisualizationError as exc:

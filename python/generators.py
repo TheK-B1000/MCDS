@@ -36,7 +36,7 @@ UNIT_RADIUS = 1.0
 # clear of the radius-1 boundary while staying human-readable.
 COORD_DECIMALS = 6
 
-GENERATOR_TYPES = ("uniform", "clustered", "perturbed_grid", "corridor", "cluster_bridge")
+GENERATOR_TYPES = ("uniform", "clustered", "perturbed_grid", "corridor", "cluster_bridge", "dumbbell")
 
 
 # ---------------------------------------------------------------------------
@@ -102,22 +102,83 @@ def gen_clustered(
     height: float,
     clusters: int,
     spread: float,
+    background_fraction: float = 0.5,
+    spread_relative: float | None = None,
 ) -> tuple[list[tuple[float, float]], list[tuple[float, float]]]:
-    """``clusters`` Gaussian blobs of points scattered over the region.
+    """Gaussian hotspots on a uniform background field.
 
-    Returns ``(points, centers)``. Cluster centres are uniform in the region;
-    members are Gaussian around their centre with standard deviation ``spread``.
+    ``spread_relative = None`` (D3 v1): hotspot sigma = ``spread`` (absolute) and
+    hotspot points may fall outside the window.
+    ``spread_relative = s`` (D3 v2, scale-invariant, finite window): sigma =
+    s * L with L = sqrt(width * height), and every hotspot point is redrawn
+    (same rng stream) until it lies inside the window. Local density then
+    depends on the declared density, not on n (thermodynamic scaling).
+
+    Returns ``(points, centers)``. Draw order (fixed, part of the definition):
+    ``clusters`` centres uniform in the region; then
+    ``round(background_fraction * n)`` background points uniform in the region;
+    then the remaining points assigned round-robin to the hotspots, Gaussian
+    around their centre with standard deviation ``spread``.
+
+    With ``background_fraction = 0`` this is exactly the pre-v1-lock "blobs
+    only" construction, whose connectivity collapses with n (the blobs drift
+    apart as the region grows); the background field keeps the graph
+    connectable at every n while the point set stays clearly clustered. See
+    docs/methodology_audit.md (clustered redesign) for the calibration evidence.
     """
     if clusters < 1:
         raise ValueError("clusters must be at least 1")
     if spread <= 0.0:
         raise ValueError("spread must be positive")
+    if not 0.0 <= background_fraction < 1.0:
+        raise ValueError("background-fraction must be in [0, 1)")
+    if spread_relative is not None and spread_relative <= 0.0:
+        raise ValueError("spread-relative must be positive")
     centers = [(rng.uniform(0.0, width), rng.uniform(0.0, height)) for _ in range(clusters)]
-    points = []
-    for i in range(n):
+    n_background = int(round(background_fraction * n))
+    points = [(rng.uniform(0.0, width), rng.uniform(0.0, height)) for _ in range(n_background)]
+    sigma = spread if spread_relative is None else spread_relative * math.sqrt(width * height)
+    for i in range(n - n_background):
         cx, cy = centers[i % clusters]
-        points.append((cx + rng.gauss(0.0, spread), cy + rng.gauss(0.0, spread)))
+        while True:
+            x = cx + rng.gauss(0.0, sigma)
+            y = cy + rng.gauss(0.0, sigma)
+            if spread_relative is None or (0.0 <= x <= width and 0.0 <= y <= height):
+                break
+        points.append((x, y))
     return points, centers
+
+
+def gen_dumbbell(
+    n: int,
+    rng: random.Random,
+    density: float,
+    neck_width: float,
+    neck_length: float,
+) -> tuple[list[tuple[float, float]], dict[str, float]]:
+    """Bottleneck domain: two squares joined by a narrow corridor (neck).
+
+    Total area n / density; points uniform over the domain at that intensity.
+    Squares of side a = sqrt((n/density - w*l)/2) grow with n; the neck keeps a
+    fixed width w and length l in units of the communication radius, so the
+    bottleneck character does not drift with scale. Neck points =
+    round(n * w * l / A); the rest are split equally between the squares (the
+    left square gets the extra one). Draw order: left square, neck, right square.
+    """
+    if neck_width <= 0.0 or neck_length <= 0.0:
+        raise ValueError("neck width and length must be positive")
+    area = n / density
+    if area <= neck_width * neck_length:
+        raise ValueError("domain too small for the neck at this n and density")
+    a = math.sqrt((area - neck_width * neck_length) / 2.0)
+    n_neck = int(round(n * neck_width * neck_length / area))
+    n_right = (n - n_neck) // 2
+    n_left = n - n_neck - n_right
+    y0 = a / 2.0 - neck_width / 2.0
+    points = [(rng.uniform(0.0, a), rng.uniform(0.0, a)) for _ in range(n_left)]
+    points += [(rng.uniform(a, a + neck_length), rng.uniform(y0, y0 + neck_width)) for _ in range(n_neck)]
+    points += [(rng.uniform(a + neck_length, 2 * a + neck_length), rng.uniform(0.0, a)) for _ in range(n_right)]
+    return points, {"square_side": a, "neck_points": n_neck, "neck_share": n_neck / n}
 
 
 def gen_perturbed_grid(
@@ -273,6 +334,10 @@ def generate(
     corridor_width: float = 2.0,
     bridge_fraction: float = 0.15,
     bridge_width: float = 0.5,
+    background_fraction: float = 0.5,
+    spread_relative: float | None = None,
+    neck_width: float = 1.0,
+    neck_length: float = 3.0,
 ) -> GenerationResult:
     """Generate a point set. Pure library entry point used by tests and later runners."""
     if type not in GENERATOR_TYPES:
@@ -291,8 +356,9 @@ def generate(
 
     if type == "clustered":
         w, h = resolve_region(n, density, width, height, region)
-        params.update({"width": w, "height": h, "clusters": clusters, "spread": spread})
-        points, centers = gen_clustered(n, rng, w, h, clusters, spread)
+        params.update({"width": w, "height": h, "clusters": clusters, "spread": spread,
+                       "background_fraction": background_fraction, "spread_relative": spread_relative})
+        points, centers = gen_clustered(n, rng, w, h, clusters, spread, background_fraction, spread_relative)
         return GenerationResult(
             points=points, type=type, n=n, seed=seed, parameters=params, centers=centers
         )
@@ -310,6 +376,11 @@ def generate(
         length = max(corridor_width, n / (density * corridor_width))
         params.update({"corridor_width": corridor_width, "length": length})
         points = gen_corridor(n, rng, corridor_width, density, length=length)
+        return GenerationResult(points=points, type=type, n=n, seed=seed, parameters=params)
+
+    if type == "dumbbell":
+        points, info = gen_dumbbell(n, rng, density, neck_width, neck_length)
+        params.update({"neck_width": neck_width, "neck_length": neck_length, **info})
         return GenerationResult(points=points, type=type, n=n, seed=seed, parameters=params)
 
     if type == "cluster_bridge":
@@ -431,6 +502,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--corridor-width", type=float, default=2.0, dest="corridor_width")
     parser.add_argument("--bridge-fraction", type=float, default=0.15, dest="bridge_fraction")
     parser.add_argument("--bridge-width", type=float, default=0.5, dest="bridge_width")
+    parser.add_argument("--spread-relative", type=float, default=None, dest="spread_relative",
+                        help="clustered v2: hotspot sigma = s * L, hotspots restricted to the window")
+    parser.add_argument("--neck-width", type=float, default=1.0, dest="neck_width", help="dumbbell neck width")
+    parser.add_argument("--neck-length", type=float, default=3.0, dest="neck_length", help="dumbbell neck length")
+    parser.add_argument(
+        "--background-fraction",
+        type=float,
+        default=0.5,
+        dest="background_fraction",
+        help="clustered: share of points on the uniform background field (rest in hotspots)",
+    )
     return parser
 
 
@@ -458,6 +540,10 @@ def main(argv: list[str] | None = None) -> int:
         corridor_width=args.corridor_width,
         bridge_fraction=args.bridge_fraction,
         bridge_width=args.bridge_width,
+        background_fraction=args.background_fraction,
+        spread_relative=args.spread_relative,
+        neck_width=args.neck_width,
+        neck_length=args.neck_length,
     )
     write_csv(args.output, result.points)
 

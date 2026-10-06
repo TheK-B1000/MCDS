@@ -110,7 +110,7 @@ class PlotColorModeTests(unittest.TestCase):
                 },
             )
             data = prepare_plot_data(points, result)
-            fig = create_figure(data, color_mode=COLOR_MODE_ROLES, show_cds_edges=True, dark=False)
+            fig = create_figure(data, color_mode=COLOR_MODE_ROLES, dark=False)
             fig.savefig(out, dpi=80)
             self.assertTrue(out.is_file())
             self.assertGreater(out.stat().st_size, 0)
@@ -134,7 +134,7 @@ class PlotColorModeTests(unittest.TestCase):
                 },
             )
             data = prepare_plot_data(points, result)
-            fig = create_figure(data, color_mode=COLOR_MODE_FINAL, show_cds_edges=False)
+            fig = create_figure(data, color_mode=COLOR_MODE_FINAL)
             self.assertIn("Final CDS", fig._suptitle.get_text())
 
     def test_large_n_downsampling_retains_selected(self) -> None:
@@ -181,7 +181,6 @@ class PlotColorModeTests(unittest.TestCase):
                 save=out,
                 show=False,
                 color_mode=COLOR_MODE_ROLES,
-                show_cds_edges=True,
             )
             self.assertTrue(out.is_file())
 

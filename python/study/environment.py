@@ -213,8 +213,9 @@ def snapshot(repo_root: Path, solvers: dict[str, Path], build_info: dict[str, An
             "available": (build_info or {}).get("cgal_available"),
             "version": (build_info or {}).get("cgal_version"),
             "boost_version": (build_info or {}).get("boost_version"),
-            "data_structure": "CGAL::Kd_tree + CGAL::Fuzzy_iso_box (dD Spatial Searching), "
-                              "exact predicate distanceSquared <= r^2 applied to the box candidates",
+            "data_structure": "CGAL::Kd_tree + CGAL::Fuzzy_sphere radial search (dD Spatial Searching) with "
+                              "radius r(1+1e-9)+8eps(|x|+|y|+r); exact predicate distanceSquared <= r^2 decides "
+                              "adjacency",
         },
         "git": git_snapshot(repo_root),
         "sources": source_hashes(repo_root),

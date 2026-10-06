@@ -15,7 +15,7 @@
       "clustered",
       "perturbed_grid",
       "corridor",
-      "cluster_bridge"
+      "dumbbell"
     ],
     "sizes": [
       250,
@@ -23,7 +23,6 @@
       2000
     ],
     "densities": [
-      5.0,
       8.0,
       12.0
     ],
@@ -32,16 +31,15 @@
     "geometry_parameters": {
       "clustered": {
         "clusters": 4,
-        "spread": 0.8
+        "background_fraction": 0.5,
+        "spread_relative": 0.05
       },
       "corridor": {
         "corridor_width": 3.0
       },
-      "cluster_bridge": {
-        "clusters": 3,
-        "spread": 0.45,
-        "bridge_fraction": 0.2,
-        "bridge_width": 0.6
+      "dumbbell": {
+        "neck_width": 1.0,
+        "neck_length": 3.0
       },
       "perturbed_grid": {
         "jitter": 0.15

@@ -92,7 +92,7 @@ def build(study_dir: Path, repo_root: Path | None = None) -> dict[str, Any]:
         "connectivity_rule": cfg["connectivity_rule"],
         "spatial_backend": cfg["spatial_backend"],
         "spatial_backend_details": {
-            "primary": "cgal: CGAL::Kd_tree + CGAL::Fuzzy_iso_box (dD Spatial Searching); adjacency decided by "
+            "primary": "cgal: CGAL::Kd_tree + CGAL::Fuzzy_sphere radial search (dD Spatial Searching); adjacency decided by "
                        "the exact predicate distanceSquared(p,q) <= r^2",
             "reference": "uniform-grid GridSpatialIndex (independent implementation; validation, CDS diameter and a "
                          "full per-graph neighbour-set cross-check)",

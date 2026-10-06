@@ -15,6 +15,7 @@ std::uint64_t g_current = 0;
 std::uint64_t g_peak = 0;
 std::uint64_t g_count = 0;
 std::uint64_t g_bytes = 0;
+std::uint64_t g_lifetime = 0;
 
 void* trackedAlloc(std::size_t size) {
     void* raw = std::malloc(size + kHeader);
@@ -27,6 +28,9 @@ void* trackedAlloc(std::size_t size) {
     ++g_count;
     if (g_current > g_peak) {
         g_peak = g_current;
+    }
+    if (g_current > g_lifetime) {
+        g_lifetime = g_current;
     }
     return static_cast<unsigned char*>(raw) + kHeader;
 }
@@ -64,6 +68,7 @@ HeapSnapshot heapSnapshot() {
     s.peakBytes = g_peak;
     s.allocationCount = g_count;
     s.allocatedBytes = g_bytes;
+    s.lifetimePeakBytes = g_lifetime;
     return s;
 }
 

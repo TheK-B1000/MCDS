@@ -928,21 +928,36 @@ def write_rectangular_tiles(
     return results
 
 
-def _grid_neighbors(
+def _component_labels(
     points: list[tuple[float, float]],
     radius: float,
-) -> list[list[int]]:
-    """Build adjacency for UDG via uniform grid (open neighborhood)."""
+) -> list[int]:
+    """Connected-component root of every point of the implicit UDG.
+
+    Implicit only (hard project invariant): a uniform grid buckets point
+    *indices* (O(n), like GridSpatialIndex) and every qualifying pair found
+    while scanning neighbouring cells is merged immediately in a union-find
+    structure. No edge or adjacency list is ever stored, so memory stays O(n)
+    regardless of how many edges the UDG has. Adjacency uses the project's
+    predicate dx*dx + dy*dy <= r*r (inclusive boundary).
+    """
     n = len(points)
+    parent = list(range(n))
+
+    def find(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
     if n == 0:
-        return []
+        return parent
     cell = max(radius, 1e-12)
     buckets: dict[tuple[int, int], list[int]] = {}
     for i, (x, y) in enumerate(points):
         key = (int(math.floor(x / cell)), int(math.floor(y / cell)))
         buckets.setdefault(key, []).append(i)
     r2 = radius * radius
-    adj: list[list[int]] = [[] for _ in range(n)]
     for (gx, gy), members in buckets.items():
         for dx in (-1, 0, 1):
             for dy in (-1, 0, 1):
@@ -956,9 +971,10 @@ def _grid_neighbors(
                             continue
                         xj, yj = points[j]
                         if (xi - xj) * (xi - xj) + (yi - yj) * (yi - yj) <= r2:
-                            adj[i].append(j)
-                            adj[j].append(i)
-    return adj
+                            ri, rj = find(i), find(j)
+                            if ri != rj:
+                                parent[max(ri, rj)] = min(ri, rj)
+    return [find(i) for i in range(n)]
 
 
 def extract_largest_connected_component(
@@ -976,26 +992,15 @@ def extract_largest_connected_component(
     n = len(points)
     if n == 0:
         raise ImportError_("source CSV is empty")
-    adj = _grid_neighbors(points, radius)
-    visited = [False] * n
-    best_component: list[int] = []
-    for start in range(n):
-        if visited[start]:
-            continue
-        stack = [start]
-        visited[start] = True
-        comp = [start]
-        while stack:
-            u = stack.pop()
-            for v in adj[u]:
-                if not visited[v]:
-                    visited[v] = True
-                    stack.append(v)
-                    comp.append(v)
-        if len(comp) > len(best_component):
-            best_component = comp
+    labels = _component_labels(points, radius)
+    sizes: dict[int, int] = {}
+    for root in labels:
+        sizes[root] = sizes.get(root, 0) + 1
+    # Largest component; ties go to the component with the smallest member
+    # index (roots are component minima), i.e. the first one in input order.
+    best_root = min(sizes, key=lambda r: (-sizes[r], r))
     # Stable order by original index for determinism.
-    best_component.sort()
+    best_component = [i for i, root in enumerate(labels) if root == best_root]
     with open_canonical_writer(output_csv) as handle:
         for new_id, idx in enumerate(best_component):
             x, y = points[idx]

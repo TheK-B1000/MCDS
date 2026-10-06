@@ -1,0 +1,147 @@
+== Reference: uniform (same new seeds)
+  uniform    n=500    d=5.0   24/24 (0.86-1.00)  clust 0.183  deg avg   14.4 med   14.0 min   3.0 max   26.0  [sparse]
+  uniform    n=500    d=8.0   24/24 (0.86-1.00)  clust 0.154  deg avg   22.4 med   23.0 min   4.5 max   37.0
+  uniform    n=500    d=12.0  24/24 (0.86-1.00)  clust 0.145  deg avg   32.8 med   33.0 min   8.5 max   51.0
+  uniform    n=1000   d=5.0   22/24 (0.74-0.98)  clust 0.200  deg avg   14.7 med   15.0 min   2.0 max   28.0  [sparse]
+  uniform    n=1000   d=8.0   24/24 (0.86-1.00)  clust 0.182  deg avg   23.3 med   23.8 min   5.0 max   39.5
+  uniform    n=1000   d=12.0  24/24 (0.86-1.00)  clust 0.180  deg avg   34.2 med   35.0 min   8.5 max   55.0
+  uniform    n=2000   d=5.0   23/24 (0.80-0.99)  clust 0.182  deg avg   15.1 med   15.0 min   2.0 max   29.0  [sparse]
+  uniform    n=2000   d=8.0   24/24 (0.86-1.00)  clust 0.165  deg avg   23.8 med   24.0 min   5.0 max   40.5
+  uniform    n=2000   d=12.0  24/24 (0.86-1.00)  clust 0.147  deg avg   35.1 med   36.0 min   9.0 max   56.5
+  uniform    n=5000   d=5.0   23/24 (0.80-0.99)  clust 0.187  deg avg   15.3 med   15.0 min   2.0 max   30.0  [sparse]
+  uniform    n=5000   d=8.0   24/24 (0.86-1.00)  clust 0.165  deg avg   24.3 med   24.0 min   5.0 max   42.5
+  uniform    n=5000   d=12.0  24/24 (0.86-1.00)  clust 0.160  deg avg   36.1 med   36.0 min   8.0 max   59.0
+  uniform    n=10000  d=5.0   23/24 (0.80-0.99)  clust 0.185  deg avg   15.4 med   15.0 min   2.0 max   31.0  [sparse]
+  uniform    n=10000  d=8.0   24/24 (0.86-1.00)  clust 0.170  deg avg   24.5 med   24.0 min   4.0 max   44.0
+  uniform    n=10000  d=12.0  24/24 (0.86-1.00)  clust 0.154  deg avg   36.6 med   37.0 min   8.5 max   61.0
+   requirements: {'R1': [(500, 1.4651121236487092, True), (1000, 1.4687312086590498, True), (2000, 1.475068205666317, True), (5000, 1.4874366893143915, True), (10000, 1.4902872275412504, True)], 'R2': [(8.0, 1.096444206200304, True), (12.0, 1.1152844685651562, True)], 'R3': None, 'pass': True}
+
+== D3 v2 ladder
+
+-- s = 0.025: G1 PASS  G2 PASS (min ratio 3.03)  G3 FAIL  R1/R2 FAIL  ->  fails
+  clustered  n=500    d=5.0   12/24 (0.31-0.69)  clust 0.543  deg avg   41.8 med   63.0 min   1.0 max   89.0  [sparse]
+  clustered  n=500    d=8.0   21/24 (0.69-0.96)  clust 0.497  deg avg   48.2 med   69.0 min   2.0 max   83.5
+  clustered  n=500    d=12.0  24/24 (0.86-1.00)  clust 0.447  deg avg   59.7 med   75.0 min   4.0 max  141.0
+  clustered  n=1000   d=5.0    8/24 (0.18-0.53)  clust 0.569  deg avg   66.5 med   81.0 min   1.0 max  135.5  [sparse]
+  clustered  n=1000   d=8.0   22/24 (0.74-0.98)  clust 0.552  deg avg   77.3 med  115.5 min   2.0 max  143.0
+  clustered  n=1000   d=12.0  24/24 (0.86-1.00)  clust 0.548  deg avg   88.8 med  134.0 min   3.5 max  163.0
+  clustered  n=2000   d=5.0    3/24 (0.04-0.31)  clust 0.568  deg avg   92.7 med   72.2 min   0.0 max  239.5  [sparse]
+  clustered  n=2000   d=8.0   23/24 (0.80-0.99)  clust 0.555  deg avg  120.3 med  127.8 min   1.0 max  261.0
+  clustered  n=2000   d=12.0  22/24 (0.74-0.98)  clust 0.543  deg avg  142.5 med  191.5 min   3.0 max  274.0
+  clustered  n=5000   d=5.0    1/24 (0.01-0.20)  clust 0.574  deg avg  120.2 med   52.0 min   0.0 max  409.0  [sparse]
+  clustered  n=5000   d=8.0   20/24 (0.64-0.93)  clust 0.561  deg avg  170.2 med   94.0 min   1.0 max  494.5
+  clustered  n=5000   d=12.0  24/24 (0.86-1.00)  clust 0.559  deg avg  224.1 med  163.5 min   3.0 max  579.5
+  clustered  n=10000  d=5.0    0/24 (0.00-0.14)  clust 0.575  deg avg  133.9 med   41.0 min   0.0 max  530.0  [sparse]
+  clustered  n=10000  d=8.0   19/24 (0.60-0.91)  clust 0.568  deg avg  199.2 med   77.0 min   1.0 max  668.5
+  clustered  n=10000  d=12.0  24/24 (0.86-1.00)  clust 0.562  deg avg  274.0 med  134.0 min   3.0 max  859.5
+     G3 n=500    d=8.0   R=2.15
+     G3 n=1000   d=8.0   R=3.32
+     G3 n=2000   d=8.0   R=5.05
+     G3 n=5000   d=8.0   R=7.01
+     G3 n=10000  d=8.0   R=8.11
+     G3 density 8.0: spread 3.77
+     G3 n=500    d=12.0  R=1.82
+     G3 n=1000   d=12.0  R=2.60
+     G3 n=2000   d=12.0  R=4.05
+     G3 n=5000   d=12.0  R=6.20
+     G3 n=10000  d=12.0  R=7.49
+     G3 density 12.0: spread 4.12
+     R1 [(500, 1.24), (1000, 1.15), (2000, 1.18), (5000, 1.32), (10000, 1.38)]  R2 [(8.0, 4.13), (12.0, 4.59)]
+
+-- s = 0.035: G1 PASS  G2 PASS (min ratio 2.80)  G3 FAIL  R1/R2 FAIL  ->  fails
+  clustered  n=500    d=5.0   12/24 (0.31-0.69)  clust 0.511  deg avg   38.9 med   50.0 min   1.0 max   82.5  [sparse]
+  clustered  n=500    d=8.0   21/24 (0.69-0.96)  clust 0.457  deg avg   47.5 med   65.0 min   2.0 max   84.5
+  clustered  n=500    d=12.0  24/24 (0.86-1.00)  clust 0.406  deg avg   60.1 med   74.0 min   4.0 max  133.5
+  clustered  n=1000   d=5.0    8/24 (0.18-0.53)  clust 0.540  deg avg   54.1 med   50.5 min   1.0 max  129.0  [sparse]
+  clustered  n=1000   d=8.0   22/24 (0.74-0.98)  clust 0.521  deg avg   70.1 med   82.5 min   2.0 max  139.5
+  clustered  n=1000   d=12.0  24/24 (0.86-1.00)  clust 0.522  deg avg   84.7 med  115.5 min   4.0 max  164.5
+  clustered  n=2000   d=5.0    4/24 (0.07-0.36)  clust 0.539  deg avg   65.3 med   44.2 min   0.0 max  199.0  [sparse]
+  clustered  n=2000   d=8.0   23/24 (0.80-0.99)  clust 0.526  deg avg   91.3 med   76.2 min   1.0 max  234.5
+  clustered  n=2000   d=12.0  22/24 (0.74-0.98)  clust 0.509  deg avg  118.8 med  124.2 min   3.0 max  258.0
+  clustered  n=5000   d=5.0    1/24 (0.01-0.20)  clust 0.546  deg avg   74.6 med   36.0 min   0.0 max  277.5  [sparse]
+  clustered  n=5000   d=8.0   21/24 (0.69-0.96)  clust 0.537  deg avg  112.1 med   61.0 min   2.0 max  374.0
+  clustered  n=5000   d=12.0  24/24 (0.86-1.00)  clust 0.533  deg avg  153.2 med   99.8 min   3.0 max  443.0
+  clustered  n=10000  d=5.0    0/24 (0.00-0.14)  clust 0.546  deg avg   79.4 med   32.0 min   0.0 max  335.0  [sparse]
+  clustered  n=10000  d=8.0   20/24 (0.64-0.93)  clust 0.543  deg avg  123.1 med   55.0 min   1.0 max  466.5
+  clustered  n=10000  d=12.0  24/24 (0.86-1.00)  clust 0.540  deg avg  174.2 med   89.5 min   3.0 max  591.0
+     G3 n=500    d=8.0   R=2.12
+     G3 n=1000   d=8.0   R=3.01
+     G3 n=2000   d=8.0   R=3.83
+     G3 n=5000   d=8.0   R=4.62
+     G3 n=10000  d=8.0   R=5.01
+     G3 density 8.0: spread 2.36
+     G3 n=500    d=12.0  R=1.83
+     G3 n=1000   d=12.0  R=2.48
+     G3 n=2000   d=12.0  R=3.38
+     G3 n=5000   d=12.0  R=4.24
+     G3 n=10000  d=12.0  R=4.76
+     G3 density 12.0: spread 2.60
+     R1 [(500, 1.27), (1000, 1.21), (2000, 1.3), (5000, 1.37), (10000, 1.42)]  R2 [(8.0, 2.59), (12.0, 2.9)]
+
+-- s = 0.05: G1 PASS  G2 PASS (min ratio 2.52)  G3 PASS  R1/R2 PASS  ->  PASSES
+  clustered  n=500    d=5.0   13/24 (0.35-0.72)  clust 0.440  deg avg   32.9 med   34.0 min   1.0 max   75.0  [sparse]
+  clustered  n=500    d=8.0   22/24 (0.74-0.98)  clust 0.398  deg avg   43.3 med   52.0 min   2.0 max   82.0
+  clustered  n=500    d=12.0  24/24 (0.86-1.00)  clust 0.365  deg avg   58.8 med   71.0 min   4.5 max  129.0
+  clustered  n=1000   d=5.0    8/24 (0.18-0.53)  clust 0.482  deg avg   41.2 med   31.8 min   1.0 max  111.0  [sparse]
+  clustered  n=1000   d=8.0   22/24 (0.74-0.98)  clust 0.461  deg avg   56.1 med   54.0 min   2.0 max  129.0
+  clustered  n=1000   d=12.0  24/24 (0.86-1.00)  clust 0.472  deg avg   74.0 med   82.8 min   4.0 max  155.0
+  clustered  n=2000   d=5.0    5/24 (0.09-0.40)  clust 0.478  deg avg   43.3 med   30.2 min   0.0 max  145.0  [sparse]
+  clustered  n=2000   d=8.0   23/24 (0.80-0.99)  clust 0.458  deg avg   64.1 med   50.2 min   1.0 max  184.0
+  clustered  n=2000   d=12.0  22/24 (0.74-0.98)  clust 0.438  deg avg   88.9 med   78.0 min   3.0 max  222.0
+  clustered  n=5000   d=5.0    1/24 (0.01-0.20)  clust 0.487  deg avg   46.9 med   27.0 min   0.0 max  176.5  [sparse]
+  clustered  n=5000   d=8.0   21/24 (0.69-0.96)  clust 0.480  deg avg   72.8 med   46.0 min   2.0 max  240.5
+  clustered  n=5000   d=12.0  24/24 (0.86-1.00)  clust 0.464  deg avg   99.2 med   70.5 min   3.0 max  322.5
+  clustered  n=10000  d=5.0    0/24 (0.00-0.14)  clust 0.483  deg avg   47.8 med   27.0 min   0.0 max  198.5  [sparse]
+  clustered  n=10000  d=8.0   20/24 (0.64-0.93)  clust 0.481  deg avg   75.9 med   43.0 min   1.0 max  288.5
+  clustered  n=10000  d=12.0  24/24 (0.86-1.00)  clust 0.479  deg avg  110.6 med   68.0 min   3.0 max  380.5
+     G3 n=500    d=8.0   R=1.93
+     G3 n=1000   d=8.0   R=2.41
+     G3 n=2000   d=8.0   R=2.69
+     G3 n=5000   d=8.0   R=3.00
+     G3 n=10000  d=8.0   R=3.09
+     G3 density 8.0: spread 1.60
+     G3 n=500    d=12.0  R=1.79
+     G3 n=1000   d=12.0  R=2.16
+     G3 n=2000   d=12.0  R=2.53
+     G3 n=5000   d=12.0  R=2.75
+     G3 n=10000  d=12.0  R=3.02
+     G3 density 12.0: spread 1.69
+     R1 [(500, 1.36), (1000, 1.32), (2000, 1.39), (5000, 1.36), (10000, 1.46)]  R2 [(8.0, 1.75), (12.0, 1.88)]
+
+D3 selection (locked rule: highest minimum G2 ratio among passing): 0.05
+
+== Dumbbell (one fixed calibration)
+  dumbbell   n=500    d=5.0   19/24 (0.60-0.91)  clust 0.202  deg avg   13.8 med   14.0 min   2.0 max   27.5  [sparse]
+  dumbbell   n=500    d=8.0   24/24 (0.86-1.00)  clust 0.196  deg avg   21.2 med   21.0 min   4.5 max   36.5
+  dumbbell   n=500    d=12.0  24/24 (0.86-1.00)  clust 0.202  deg avg   30.5 med   31.0 min   8.0 max   51.0
+  dumbbell   n=1000   d=5.0   20/24 (0.64-0.93)  clust 0.207  deg avg   14.2 med   14.0 min   2.0 max   27.0  [sparse]
+  dumbbell   n=1000   d=8.0   24/24 (0.86-1.00)  clust 0.191  deg avg   22.4 med   22.0 min   4.0 max   39.0
+  dumbbell   n=1000   d=12.0  24/24 (0.86-1.00)  clust 0.187  deg avg   32.5 med   33.0 min   8.0 max   53.0
+  dumbbell   n=2000   d=5.0   19/24 (0.60-0.91)  clust 0.214  deg avg   14.8 med   15.0 min   2.0 max   28.0  [sparse]
+  dumbbell   n=2000   d=8.0   24/24 (0.86-1.00)  clust 0.200  deg avg   23.2 med   23.0 min   4.0 max   41.0
+  dumbbell   n=2000   d=12.0  24/24 (0.86-1.00)  clust 0.196  deg avg   34.1 med   35.0 min   8.0 max   56.0
+  dumbbell   n=5000   d=5.0   18/24 (0.55-0.88)  clust 0.199  deg avg   15.1 med   15.0 min   1.0 max   31.0  [sparse]
+  dumbbell   n=5000   d=8.0   24/24 (0.86-1.00)  clust 0.182  deg avg   23.9 med   24.0 min   4.0 max   43.5
+  dumbbell   n=5000   d=12.0  24/24 (0.86-1.00)  clust 0.173  deg avg   35.3 med   36.0 min   7.0 max   58.0
+  dumbbell   n=10000  d=5.0   24/24 (0.86-1.00)  clust 0.195  deg avg   15.3 med   15.0 min   1.5 max   31.0  [sparse]
+  dumbbell   n=10000  d=8.0   24/24 (0.86-1.00)  clust 0.174  deg avg   24.2 med   24.0 min   4.0 max   44.0
+  dumbbell   n=10000  d=12.0  24/24 (0.86-1.00)  clust 0.166  deg avg   36.1 med   36.0 min   7.0 max   61.0
+   G1 PASS  R1 [(500, 1.44), (1000, 1.46), (2000, 1.47), (5000, 1.48), (10000, 1.49)]  R2 [(8.0, 1.14), (12.0, 1.18)]  R3 width 1.0 worst share 0.072 -> PASS
+   verdict: dumbbell replaces cluster_bridge in the primary factorial
+
+== Sparse density-5 admission (>= 18/24) for v2 geometries
+   uniform    n=500    24/24  ADMIT
+   uniform    n=1000   22/24  ADMIT
+   uniform    n=2000   23/24  ADMIT
+   uniform    n=5000   23/24  ADMIT
+   uniform    n=10000  23/24  ADMIT
+   dumbbell   n=500    19/24  ADMIT
+   dumbbell   n=1000   20/24  ADMIT
+   dumbbell   n=2000   19/24  ADMIT
+   dumbbell   n=5000   18/24  ADMIT
+   dumbbell   n=10000  24/24  ADMIT
+   clustered  n=500    13/24  exclude
+   clustered  n=1000    8/24  exclude
+   clustered  n=2000    5/24  exclude
+   clustered  n=5000    1/24  exclude
+   clustered  n=10000   0/24  exclude

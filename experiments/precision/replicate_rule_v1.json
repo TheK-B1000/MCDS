@@ -1,0 +1,96 @@
+{
+  "name": "Replicate-count decision rule v1 (locked before the clean precision pilot)",
+  "recorded_utc": "2026-10-06T13:20:56Z",
+  "recorded_utc_source": "system clock (datetime.now(timezone.utc)) at the moment this file was written; not typed by hand",
+  "question": "How many independent graphs are needed before the paired estimates stop changing enough to matter? Not decided by significance or by which count makes results look best.",
+  "statistical_unit": "one independently generated graph instance. Timing repetitions on one graph are technical replicates (summarised by their median) and never count as replicates.",
+  "ladder": [
+    20,
+    28,
+    36,
+    44,
+    52
+  ],
+  "ladder_rationale": "every level is a multiple of 4, so the Williams execution order keeps the four algorithms exactly position-balanced at every candidate count; constant +8 steps keep the stability comparison like-for-like",
+  "pilot": {
+    "config": "experiments/precision_pilot.json",
+    "graphs_per_cell": 52,
+    "geometries": [
+      "uniform",
+      "clustered",
+      "perturbed_grid",
+      "corridor",
+      "dumbbell"
+    ],
+    "sizes": [
+      500,
+      2000,
+      10000
+    ],
+    "densities": [
+      8.0,
+      12.0
+    ],
+    "rationale": "every primary geometry, both primary densities, smallest / middle / largest primary n, so high-variance regimes are caught; not the full factorial",
+    "measurement_protocol": "identical to the final study: CGAL backend, Williams execution order, timing repetitions 5, warmups 1, process_mode shared, validate all",
+    "machine_conditions": "clean run under the machine-preparation checklist of docs/final_experiment_protocol.md"
+  },
+  "prefix_rule": "an evaluation at k uses graphs with replicate number 1..k of each cell, i.e. exactly the graphs a k-replicate study would have collected; no resampling or selection",
+  "comparisons": "every unordered algorithm pair (6) in every pilot cell, paired on identical graphs, CGAL backend",
+  "metrics": {
+    "cds_fraction": {
+      "per_graph": "d = |D_A|/n - |D_B|/n",
+      "ci": "Student-t 95% CI of the mean of d over the first k graphs: half-width = t(0.975, k-1) * sd / sqrt(k)",
+      "precision_value": "half-width in percentage points of CDS fraction (x 100)"
+    },
+    "runtime_ratio": {
+      "per_graph": "l = ln(T_A / T_B), T = median of that graph's timed repetitions",
+      "ci": "Student-t 95% CI of the mean of l: half-width h = t(0.975, k-1) * sd / sqrt(k)",
+      "precision_value": "multiplicative half-width m = exp(h) - 1 (e.g. 0.10 = CI within x/÷ 1.10)"
+    }
+  },
+  "strata": "adequacy is judged separately in every (geometry, density) stratum of the pilot (10 strata, 3 sizes x 6 pairs = 18 comparisons each); densities are never pooled, so the count is set by the least-precise primary regime",
+  "narrowness": {
+    "cds_fraction": {
+      "share_threshold_pp": 1.0,
+      "min_share": 0.9,
+      "max_pp": 2.0
+    },
+    "runtime_ratio": {
+      "share_threshold": 0.1,
+      "min_share": 0.9,
+      "max": 0.2
+    },
+    "rule": "k is narrow enough iff in EVERY stratum: >= 90% of comparisons have CDS half-width <= 1.0 pp and none exceeds 2.0 pp, AND >= 90% have runtime m <= 0.10 and none exceeds 0.20"
+  },
+  "selection": "choose the smallest k in {20, 28, 36, 44, 52} that satisfies the narrowness thresholds (CDS quality and runtime) in every required pilot stratum. If even k = 52 fails, the outcome is reported explicitly as 'precision target not met at 52' with every failing comparison; 52 is NOT declared sufficient and the final experiment stops for a protocol decision.",
+  "applies_to": "experiments/final.json synthetic.replicates (and the optional sparse study, which follows the final count)",
+  "decision_tool": "python/replicate_decision.py",
+  "write_up": "Each experimental cell was evaluated on k independently generated graph instances, selected through a preregistered precision pilot (rule recorded in experiments/precision/replicate_rule_v1.json before the pilot ran).",
+  "amendments": [
+    {
+      "amended_utc": "2026-10-06T13:26:30Z",
+      "amended_utc_source": "system clock at the moment of the amendment",
+      "before_any_pilot_data": true,
+      "removed": {
+        "stability": {
+          "max_improvement": 0.15,
+          "rule": "for k < 52: in EVERY stratum and for BOTH metrics, improvement = 1 - median_hw(k + 8) / median_hw(k) < 0.15 (median over the stratum's 18 comparisons; improvement = 0 when median_hw(k) = 0). At k = 52 there is no next level, so stability is not required."
+        }
+      },
+      "reason": "Under independent sampling the CI half-width scales as t(0.975,k-1)/sqrt(k), so the k -> k+8 improvement is arithmetic, not data-driven: expected 17.1% (k=20), 12.7% (28), 10.1% (36), 8.4% (44). Simulation with 18 comparisons per stratum: per-check pass probability 0.27 (k=20), 0.86 (28), 1.00 (36+); with 10 strata x 2 metrics all required, k=28 passes with probability ~0.05. The test would have made 36 the effective minimum regardless of the data and made 28 a coin flip. Owner's decision: narrowness only.",
+      "decided_by": "project owner"
+    },
+    {
+      "amended_utc": "2026-10-06T13:27:06Z",
+      "amended_utc_source": "system clock at the moment of the amendment",
+      "before_any_pilot_data": true,
+      "replaced": {
+        "selection": "choose the smallest k in the ladder that is narrow enough (narrowness rule above, in every stratum). If no k is narrow enough, use 52 (the cap) and report every comparison that misses the narrowness thresholds at 52; no ladder value is added and no threshold is loosened."
+      },
+      "reason": "owner: no silent fallback to the cap; if 52 fails, stop for a protocol decision. Trajectory plots added as a non-binding diagnostic.",
+      "decided_by": "project owner"
+    }
+  ],
+  "stability_diagnostic": "non-binding: point-estimate trajectories (paired CDS-fraction difference and geometric-mean runtime ratio, with their CIs) are plotted across k for every comparison. They inform the write-up only and never change the selected k. A nested 'k+8 estimate inside the k CI' rule is deliberately not used: cumulative estimates at k and k+8 share observations, so it passes very frequently under ordinary noise."
+}

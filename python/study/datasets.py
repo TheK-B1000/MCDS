@@ -92,6 +92,125 @@ def target_expected_degree(density: float | None, radius: float) -> float | None
     return None if density is None else density * math.pi * radius * radius
 
 
+# Gaussian cluster coordinates are bounded by this many standard deviations in
+# the feasibility argument; P(|N(0,1)| > 6) < 2e-9 per coordinate.
+FEASIBILITY_SIGMA_BOUND = 6.0
+
+
+def generation_feasibility(geometry: str, n: int, density: float, radius: float,
+                           params: dict[str, Any]) -> tuple[bool, str]:
+    """Pre-generation check: can this cell yield a connected UDG under the protocol?
+
+    Only `cluster_bridge` is checked: cluster centres are placed in a row at
+    least max(6*spread, 8) apart and round(bridge_fraction*n) bridge points are
+    spread evenly along each gap (axial jitter +/- 0.1). A connected graph
+    needs, across every gap, a chain of points whose x-coordinates differ by at
+    most r. With cluster coordinates bounded at 6 sigma, each point's
+    x-coordinate lies in a known interval; if their union leaves a hole wider
+    than r, a connected instance requires a cluster coordinate beyond 6 sigma
+    (probability < 2e-9 per coordinate). The Gaussian is unbounded, so this is
+    NEGLIGIBLE probability, not impossibility. Such cells are excluded before
+    generation and recorded as `generation_infeasible_under_protocol`: under
+    the preregistered generator parameters and connectivity-attempt policy
+    they have negligible probability of yielding a connected instance. This is
+    a property of the generator, never of an MCDS algorithm.
+
+    `dumbbell` is checked deterministically: the locked domain (two squares of
+    side a = sqrt((n/density - w*l)/2) joined by a w x l neck) is well defined
+    only if n/density > w*l and a >= w (the neck attaches within a square's
+    side). Otherwise the cell cannot be generated under the protocol.
+    """
+    if geometry == "dumbbell":
+        import math as _m  # noqa: PLC0415
+
+        w = float(params.get("neck_width", 1.0))
+        length = float(params.get("neck_length", 3.0))
+        area = n / density if density > 0 else 0.0
+        if area <= w * length:
+            return False, (f"dumbbell at n={n}, density={density:g}: domain area {area:.3f} <= neck area "
+                           f"{w * length:g}; the locked domain is not defined")
+        a = _m.sqrt((area - w * length) / 2.0)
+        if a < w:
+            return False, (f"dumbbell at n={n}, density={density:g}: square side {a:.3f} < neck width {w:g}; "
+                           f"the locked domain is not defined")
+        return True, ""
+    if geometry != "cluster_bridge":
+        return True, ""
+    import math as _m  # noqa: PLC0415
+
+    from generators import UNIT_RADIUS  # noqa: PLC0415
+
+    clusters = int(params.get("clusters", 8))
+    spread = float(params.get("spread", 0.5))
+    bridge_fraction = float(params.get("bridge_fraction", 0.15))
+    gap = max(6.0 * spread, 8.0 * UNIT_RADIUS)
+    n_bridge = int(round(n * bridge_fraction))
+    gaps = clusters - 1
+    reach = FEASIBILITY_SIGMA_BOUND * spread
+    for g in range(gaps):
+        share = n_bridge // gaps + (1 if g < n_bridge % gaps else 0)
+        x0 = g * gap
+        intervals = [(x0 - reach, x0 + reach), (x0 + gap - reach, x0 + gap + reach)]
+        for k in range(share):
+            xk = x0 + (k + 0.5) / share * gap
+            intervals.append((xk - 0.1, xk + 0.1))
+        intervals.sort()
+        covered = intervals[0][1]
+        for lo, hi in intervals[1:]:
+            if lo - covered > radius:
+                hole = lo - covered
+                return False, (
+                    f"cluster_bridge at n={n}: negligible probability of a connected instance under the "
+                    f"protocol: gap {g} between cluster centres ({gap:g} apart) has {share} bridge point(s); "
+                    f"the x-projection leaves a hole of {hole:.3f} > r={radius:g} unless a cluster coordinate "
+                    f"falls beyond {FEASIBILITY_SIGMA_BOUND:g} sigma (P < 2e-9 per coordinate)")
+            covered = max(covered, hi)
+        if _m.isnan(covered):
+            return False, "invalid parameters"
+    return True, ""
+
+
+def load_calibration(cal: dict[str, Any], repo_root: Path) -> dict[tuple, dict[str, Any]]:
+    """Calibration cells keyed by (geometry, n, density, radius); verifies the file hash."""
+    import hashlib  # noqa: PLC0415
+
+    path = Path(cal["file"])
+    if not path.is_absolute():
+        path = repo_root / path
+    data = path.read_bytes()
+    digest = hashlib.sha256(data).hexdigest()
+    if digest != cal["sha256"]:
+        raise RuntimeError(f"calibration file {path} has sha256 {digest}, config expects {cal['sha256']}")
+    doc = json.loads(data.decode("utf-8"))
+    return {(c["geometry"], int(c["n"]), float(c["density"]), float(c["radius"])): c for c in doc["cells"]}
+
+
+def calibration_feasibility(cal: dict[str, Any], repo_root: Path, p: PlannedDataset) -> tuple[bool, str]:
+    """A cell is admitted only if preregistered calibration measured its
+    connectivity acceptance rate at or above the threshold. Cells the
+    calibration did not cover are not admitted. `cal` is one entry or a list of
+    entries; an entry with `geometries` speaks only for those geometries."""
+    if isinstance(cal, list):
+        chosen = [e for e in cal if not e.get("geometries") or p.geometry in e["geometries"]]
+        if len(chosen) != 1:
+            return False, f"geometry {p.geometry!r} is not covered by exactly one feasibility_calibration entry"
+        cal = chosen[0]
+    elif cal.get("geometries") and p.geometry not in cal["geometries"]:
+        return False, f"geometry {p.geometry!r} is not covered by the calibration entry for {cal['geometries']}"
+    cells = load_calibration(cal, repo_root)
+    key = (p.geometry, int(p.n or 0), float(p.density_target or 0.0), float(p.radius))
+    cell = cells.get(key)
+    threshold = float(cal["min_acceptance_rate"])
+    if cell is None:
+        return False, f"not covered by the preregistered calibration {cal['file']}"
+    rate = float(cell["acceptance_rate"])
+    if rate < threshold:
+        return False, (f"preregistered calibration measured acceptance {cell['connected']}/{cell['graphs']} "
+                       f"= {rate:.3f} (Wilson 95% CI {cell['acceptance_wilson_low']:.3f}-"
+                       f"{cell['acceptance_wilson_high']:.3f}) < required {threshold:g}")
+    return True, ""
+
+
 def _graph_probe(binary: Path, csv_path: Path, radius: float, backend: str) -> dict[str, Any]:
     """Untimed graph check with the study's primary backend. Fails on a CGAL /
     grid neighbour-set mismatch (the bench cross-checks every graph)."""
@@ -155,6 +274,16 @@ def prepare(p: PlannedDataset, cfg: dict[str, Any], repo_root: Path, out_dir: Pa
                 "sidecar": sidecar,
             },
         })
+        return record
+
+    feasible, reason = generation_feasibility(p.geometry, int(p.n or 0), float(p.density_target or 0.0),
+                                              p.radius, p.params)
+    if feasible and cfg.get("feasibility_calibration"):
+        feasible, reason = calibration_feasibility(cfg["feasibility_calibration"], repo_root, p)
+    if not feasible:
+        # Excluded before generation: no attempts, no graph, no algorithm run.
+        record["status"] = "generation_infeasible_under_protocol"
+        record["error"] = reason
         return record
 
     ds_dir = out_dir / "datasets" / p.geometry

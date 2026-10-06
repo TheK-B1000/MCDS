@@ -184,6 +184,54 @@ MCDS_TEST(algorithms_return_identical_sets_through_instrumented_index) {
     }
 }
 
+MCDS_TEST(cds_diameter_known_graphs) {
+    // Path of 5 points spaced 0.9: diameter of the full path is 4 hops.
+    std::vector<Point> path;
+    for (int i = 0; i < 5; ++i) path.push_back(Point{i, 0.9 * i, 0.0});
+    const PointSet ps(std::move(path));
+    const GridSpatialIndex g(ps, 1.0);
+    MCDS_CHECK_EQ(bench::cdsDiameter(ps, g, {0, 1, 2, 3, 4}, 1.0), 4LL);
+    MCDS_CHECK_EQ(bench::cdsDiameter(ps, g, {1, 2, 3}, 1.0), 2LL);
+    MCDS_CHECK_EQ(bench::cdsDiameter(ps, g, {2}, 1.0), 0LL);
+    MCDS_CHECK_EQ(bench::cdsDiameter(ps, g, {0, 2}, 1.0), -1LL);   // induced subgraph disconnected
+    MCDS_CHECK_EQ(bench::cdsDiameter(ps, g, {}, 1.0), -1LL);
+    MCDS_CHECK_EQ(bench::cdsDiameter(ps, g, {3, 3, 2}, 1.0), 1LL);  // duplicates ignored
+    // Triangle (all mutually adjacent): diameter 1.
+    const PointSet tri({Point{0, 0.0, 0.0}, Point{1, 0.5, 0.0}, Point{2, 0.25, 0.4}});
+    const GridSpatialIndex gt(tri, 1.0);
+    MCDS_CHECK_EQ(bench::cdsDiameter(tri, gt, {0, 1, 2}, 1.0), 1LL);
+}
+
+MCDS_TEST(cds_diameter_matches_brute_force_on_random_sets) {
+    // Oracle (tests only): all-pairs BFS over the brute-force induced subgraph.
+    std::mt19937 rng(99);
+    for (int trial = 0; trial < 60; ++trial) {
+        const PointSet pts = randomPoints(120, 4.0, static_cast<unsigned>(trial) + 300u);
+        const GridSpatialIndex g(pts, 1.0);
+        std::vector<int> sel;
+        for (std::size_t i = 0; i < pts.size(); ++i) if (rng() % 3 == 0) sel.push_back(pts.idAt(i));
+        const std::size_t k = sel.size();
+        long long expected = k == 0 ? -1 : 0;
+        for (std::size_t s = 0; s < k && expected >= 0; ++s) {
+            std::vector<long long> dist(k, -1);
+            dist[s] = 0;
+            std::vector<std::size_t> q{s};
+            for (std::size_t h = 0; h < q.size(); ++h) {
+                const std::size_t u = q[h];
+                for (std::size_t v = 0; v < k; ++v) {
+                    if (dist[v] < 0 && mcds::distanceSquared(pts[pts.indexOf(sel[u])], pts[pts.indexOf(sel[v])]) <= 1.0) {
+                        dist[v] = dist[u] + 1;
+                        q.push_back(v);
+                    }
+                }
+            }
+            if (q.size() != k) { expected = -1; break; }
+            for (const long long dv : dist) expected = std::max(expected, dv);
+        }
+        MCDS_CHECK_EQ(bench::cdsDiameter(pts, g, sel, 1.0), expected);
+    }
+}
+
 MCDS_TEST(process_memory_reports_something_on_supported_platforms) {
     const bench::ProcessMemory m = bench::processMemory();
 #if defined(_WIN32) || defined(__linux__)
