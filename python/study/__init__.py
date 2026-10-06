@@ -9,4 +9,4 @@ METHODOLOGY_VERSION names the methodology state recorded in every result row:
 (e.g. "v1.0-final-experiment") when the final protocol is locked.
 """
 
-METHODOLOGY_VERSION = "v1.0-final-experiment"
+METHODOLOGY_VERSION = "v1-dev"

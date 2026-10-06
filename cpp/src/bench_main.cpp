@@ -32,6 +32,7 @@
 #include <ratio>
 #include <sstream>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -46,6 +47,10 @@
 #include "algorithms/Wan.hpp"
 #include "bench/BenchSupport.hpp"
 #include "bench/BuildInfo.hpp"
+
+#if MCDS_WITH_CGAL
+#include "CgalSpatialIndex.hpp"
+#endif
 
 #ifndef MCDS_HEAP_TRACKING
 #define MCDS_HEAP_TRACKING 0
@@ -64,7 +69,7 @@ namespace {
 using Clock = std::chrono::steady_clock;
 namespace bench = mcds::bench;
 
-constexpr const char* kSchema = "mcds-bench/1";
+constexpr const char* kSchema = "mcds-bench/2";
 constexpr std::size_t kExactHardMaxN = 20;
 
 // ---------------------------------------------------------------------------
@@ -103,6 +108,11 @@ public:
         out_ << s.str();
     }
     void null() { pre(); out_ << "null"; }
+
+    void null_field(const char* k) {
+        key(k);
+        null();
+    }
 
     template <typename T>
     void field(const char* k, const T& v) {
@@ -190,6 +200,7 @@ struct Options {
     bool graphOnly = false;
     bool runDisconnected = false;
     bool emitSolution = false;
+    std::string spatialBackend;  // required: grid | cgal | explicit
 };
 
 void usage() {
@@ -198,6 +209,7 @@ void usage() {
         "                  [--algorithms a,b,c,d] [--repetitions N] [--warmups W]\n"
         "                  [--instrumentation none|basic|detailed] [--validate all|first]\n"
         "                  [--exact-max-n K] [--graph-only] [--run-disconnected] [--emit-solution]\n"
+        "                  --spatial-backend grid|cgal|explicit\n"
         "\n"
         "Algorithms run in the order given; repetitions are interleaved across algorithms.\n");
 }
@@ -280,6 +292,15 @@ void writeBuild(Json& j) {
 #else
     j.field("heap_tracking", false);
 #endif
+#if MCDS_WITH_CGAL
+    j.field("cgal_available", true);
+    j.field("cgal_version", mcds::cgalVersionString());
+    j.field("boost_version", mcds::cgalBoostVersionString());
+#else
+    j.field("cgal_available", false);
+    j.null_field("cgal_version");
+    j.null_field("boost_version");
+#endif
     j.field("clock", "std::chrono::steady_clock");
     j.field("clock_is_steady", Clock::is_steady);
     j.field("clock_period_ns", static_cast<double>(Clock::period::num) * 1e9 /
@@ -334,6 +355,7 @@ int main(int argc, char** argv) {
             else if (arg == "--graph-only") opt.graphOnly = true;
             else if (arg == "--run-disconnected") opt.runDisconnected = true;
             else if (arg == "--emit-solution") opt.emitSolution = true;
+            else if (arg == "--spatial-backend") opt.spatialBackend = need("--spatial-backend");
             else { std::fprintf(stderr, "error: unknown option '%s'\n", arg.c_str()); usage(); return 2; }
         } catch (const std::exception&) {
             std::fprintf(stderr, "error: bad value for %s\n", arg.c_str());
@@ -355,11 +377,27 @@ int main(int argc, char** argv) {
             if (!seen.insert(a).second) { std::fprintf(stderr, "error: algorithm '%s' listed twice\n", a.c_str()); return 2; }
         }
     }
+    if (opt.spatialBackend != "grid" && opt.spatialBackend != "cgal" && opt.spatialBackend != "explicit") {
+        std::fprintf(stderr, "error: --spatial-backend must be grid, cgal or explicit (got '%s')\n",
+                     opt.spatialBackend.c_str());
+        return 2;
+    }
+#if !MCDS_WITH_CGAL
+    if (opt.spatialBackend != "grid") {
+        // Never substitute another backend: provenance would silently be wrong.
+        std::fprintf(stderr,
+                     "error: --spatial-backend %s requires CGAL, but this binary was built with "
+                     "MCDS_WITH_CGAL=OFF. Rebuild with CGAL (see cpp/CMakeLists.txt); no fallback.\n",
+                     opt.spatialBackend.c_str());
+        return 2;
+    }
+#endif
     if (!opt.graphOnly && opt.algorithms.empty()) {
         std::fprintf(stderr, "error: --algorithms required unless --graph-only\n");
         return 2;
     }
 
+    const auto processStart = Clock::now();
     std::ostringstream body;
     Json j(body);
 
@@ -375,17 +413,95 @@ int main(int argc, char** argv) {
 
         const std::uint64_t fingerprint = bench::pointsFingerprint(points);
 
-        // --- T_spatial_index ----------------------------------------------
+        // --- Independent grid ---------------------------------------------
+        // Always built. It is the backend when --spatial-backend grid, and
+        // otherwise the independent reference used (untimed, after the
+        // algorithm timer) for validation, CDS diameter and the full
+        // neighbour-set cross-check. Algorithms never see it unless it is the
+        // selected backend.
+#if MCDS_HEAP_TRACKING
+        bench::heapResetWindow();
+        const std::uint64_t gridHeapBase = bench::heapSnapshot().currentBytes;
+#endif
         t0 = Clock::now();
         mcds::GridSpatialIndex grid(points, opt.radius);
-        const double indexMs = msSince(t0);
+        const double gridMs = msSince(t0);
+#if MCDS_HEAP_TRACKING
+        const std::uint64_t gridHeapPeak = bench::heapSnapshot().peakBytes - gridHeapBase;
+#endif
 
-        // --- T_graph_stats (analysis only; never given to algorithms) -----
+        // --- T_spatial_index: the selected backend -------------------------
+        // Built once per graph and reused read-only by every algorithm in this
+        // process (counters reset before each execution): identical for all.
+        mcds::SpatialIndex* backend = &grid;
+        double indexMs = gridMs;
+        double validationIndexMs = 0.0;  // grid shared when it is the backend
+        std::int64_t indexHeapPeak = -1;
+#if MCDS_HEAP_TRACKING
+        indexHeapPeak = static_cast<std::int64_t>(gridHeapPeak);
+#endif
+#if MCDS_WITH_CGAL
+        std::unique_ptr<mcds::CgalSpatialIndex> cgal;
+        std::unique_ptr<bench::ExplicitAdjacencyIndex> explicitIndex;
+        if (opt.spatialBackend != "grid") {
+            validationIndexMs = gridMs;
+#if MCDS_HEAP_TRACKING
+            bench::heapResetWindow();
+            const std::uint64_t base = bench::heapSnapshot().currentBytes;
+#endif
+            t0 = Clock::now();
+            cgal = std::make_unique<mcds::CgalSpatialIndex>(points);
+            if (opt.spatialBackend == "explicit") {
+                // Explicit representation: materialise the UDG once (CSR) from
+                // the CGAL range queries; construction includes the CGAL build.
+                explicitIndex = std::make_unique<bench::ExplicitAdjacencyIndex>(points, *cgal, opt.radius);
+                backend = explicitIndex.get();
+            } else {
+                backend = cgal.get();
+            }
+            indexMs = msSince(t0);
+#if MCDS_HEAP_TRACKING
+            indexHeapPeak = static_cast<std::int64_t>(bench::heapSnapshot().peakBytes - base);
+#endif
+            cgal->resetStats();
+        }
+#endif
+        (void)indexHeapPeak;
+
+        // --- Backend cross-check (untimed; every graph) ---------------------
+        // The selected backend must return exactly the grid's neighbour set
+        // for every point; otherwise the graph is not run.
+        std::string crossStatus = "not_applicable";
+        std::uint64_t crossMismatches = 0;
+        long long firstMismatchId = -1;
+        double crossMs = 0.0;
+        if (backend != &grid) {
+            t0 = Clock::now();
+            std::vector<int> a;
+            std::vector<int> b;
+            for (std::size_t i = 0; i < points.size(); ++i) {
+                backend->radiusQuery(points.idAt(i), opt.radius, a);
+                grid.radiusQuery(points.idAt(i), opt.radius, b);
+                std::sort(a.begin(), a.end());
+                std::sort(b.begin(), b.end());
+                if (a != b) {
+                    if (crossMismatches++ == 0) firstMismatchId = points.idAt(i);
+                }
+            }
+            crossMs = msSince(t0);
+            crossStatus = crossMismatches == 0 ? "identical" : "mismatch";
+        }
+        backend->resetStats();
         grid.resetStats();
+
+        // --- Graph statistics (analysis only; never given to algorithms) ----
         t0 = Clock::now();
-        const bench::GraphStats gs = bench::computeGraphStats(points, grid, opt.radius);
+        const bench::GraphStats gs = bench::computeGraphStats(points, *backend, opt.radius);
         const double graphStatsMs = msSince(t0);
+        backend->resetStats();
         grid.resetStats();
+
+        j.field("spatial_backend", opt.spatialBackend);
 
         j.key("input");
         j.beginObject();
@@ -404,11 +520,37 @@ int main(int argc, char** argv) {
 
         j.key("index");
         j.beginObject();
-        j.field("backend", grid.name());
-        j.field("cell_size", grid.cellSize());
-        j.field("cells_x", static_cast<std::int64_t>(grid.cellsX()));
-        j.field("cells_y", static_cast<std::int64_t>(grid.cellsY()));
-        j.field("index_bytes", static_cast<std::uint64_t>(grid.indexBytes()));
+        j.field("backend", backend->name());
+        if (backend == &grid) {
+            j.field("counter_semantics", "grid_cell_scan");
+            j.field("cell_size", grid.cellSize());
+            j.field("cells_x", static_cast<std::int64_t>(grid.cellsX()));
+            j.field("cells_y", static_cast<std::int64_t>(grid.cellsY()));
+            j.field("index_bytes", static_cast<std::uint64_t>(grid.indexBytes()));
+        }
+#if MCDS_WITH_CGAL
+        else if (explicitIndex) {
+            j.field("counter_semantics", "none_stored_adjacency");
+            j.field("index_bytes", static_cast<std::uint64_t>(explicitIndex->adjacencyBytes()));
+            j.field("adjacency_slots", explicitIndex->edgeSlots());
+            j.field("built_from", "cgal-kd-tree");
+        } else {
+            j.field("counter_semantics", "cgal_box_report");
+            j.null_field("index_bytes");  // not exposed by the CGAL API; see memory probes
+        }
+#endif
+#if MCDS_HEAP_TRACKING
+        j.field("index_heap_peak_bytes", indexHeapPeak);
+#endif
+        j.endObject();
+
+        j.key("backend_crosscheck");
+        j.beginObject();
+        j.field("status", crossStatus);
+        j.field("reference", "uniform-grid");
+        j.field("points_checked", static_cast<std::uint64_t>(backend != &grid ? points.size() : 0));
+        j.field("mismatching_points", crossMismatches);
+        j.field("first_mismatch_id", static_cast<std::int64_t>(firstMismatchId));
         j.endObject();
 
         j.key("graph");
@@ -427,6 +569,7 @@ int main(int argc, char** argv) {
         j.field("connected", gs.connected);
         j.field("stats_neighbor_queries", gs.neighborQueries);
         j.field("stats_candidates_examined", gs.candidatesExamined);
+        j.field("stats_backend", backend->name());
         j.endObject();
 
         // --- Optional exact OPT (analysis only) ---------------------------
@@ -440,14 +583,22 @@ int main(int argc, char** argv) {
         } else if (points.size() > opt.exactMaxN) {
             j.field("status", "skipped_n_too_large");
         } else {
-            t0 = Clock::now();
-            const mcds::ExactSmallResult ex = mcds::exactSmallMCDS(points, opt.radius, opt.exactMaxN);
-            exactMs = msSince(t0);
-            const mcds::ValidationResult ev = mcds::validateCDS(points, grid, ex.selectedIds, opt.radius);
-            j.field("status", ev.valid() ? "computed" : "computed_but_invalid");
-            j.field("opt_size", static_cast<std::uint64_t>(ex.optSize));
-            j.field("valid", ev.valid());
             j.field("method", "exhaustive_by_increasing_size");
+            t0 = Clock::now();
+            try {
+                const mcds::ExactSmallResult ex = mcds::exactSmallMCDS(points, opt.radius, opt.exactMaxN);
+                exactMs = msSince(t0);
+                // Independent check of the exact answer with the validator.
+                const mcds::ValidationResult ev = mcds::validateCDS(points, grid, ex.selectedIds, opt.radius);
+                j.field("status", ev.valid() ? "computed" : "computed_but_invalid");
+                j.field("opt_size", static_cast<std::uint64_t>(ex.optSize));
+                j.field("valid", ev.valid());
+            } catch (const std::exception& e) {
+                // Recorded, never silently dropped; heuristics still run.
+                exactMs = msSince(t0);
+                j.field("status", "error");
+                j.field("error", e.what());
+            }
         }
         j.endObject();
 
@@ -455,7 +606,11 @@ int main(int argc, char** argv) {
         j.beginObject();
         j.field("dataset", datasetMs);
         j.field("spatial_index", indexMs);
-        j.field("graph_stats", graphStatsMs);
+        j.field("validation_index", validationIndexMs);
+        j.field("backend_crosscheck", crossMs);
+        j.field("graph_stats", graphStatsMs);  // degree pass + components
+        j.field("degree_pass", gs.degreePassMs);
+        j.field("connectivity", gs.connectivityMs);
         j.field("exact", exactMs);
         j.endObject();
 
@@ -469,15 +624,19 @@ int main(int argc, char** argv) {
 
         writeMemory(j, "process_memory_after_preprocessing");
 
-        const bool skipAlgorithms = opt.graphOnly || (!gs.connected && !opt.runDisconnected);
-        j.field("status", opt.graphOnly ? "graph_only" : (skipAlgorithms ? "input_disconnected" : "ok"));
+        const bool mismatch = crossStatus == "mismatch";
+        const bool skipAlgorithms = opt.graphOnly || mismatch || (!gs.connected && !opt.runDisconnected);
+        j.field("status", mismatch ? "backend_mismatch"
+                                   : (opt.graphOnly ? "graph_only" : (skipAlgorithms ? "input_disconnected" : "ok")));
 
         // --- Algorithm executions -----------------------------------------
-        bench::InstrumentedSpatialIndex instrumented(grid, opt.instrumentation == Instrumentation::Detailed);
+        bench::InstrumentedSpatialIndex instrumented(*backend, opt.instrumentation == Instrumentation::Detailed,
+                                                     backend == &grid ? &grid : nullptr);
         mcds::SpatialIndex& algoIndex =
-            opt.instrumentation == Instrumentation::None
-                ? static_cast<mcds::SpatialIndex&>(grid)
-                : static_cast<mcds::SpatialIndex&>(instrumented);
+            opt.instrumentation == Instrumentation::None ? *backend
+                                                         : static_cast<mcds::SpatialIndex&>(instrumented);
+        const bool hasCandidates = backend->name() != std::string("explicit-csr");
+        std::unordered_map<std::string, long long> diameterByHash;
 
         j.key("runs");
         j.beginArray();
@@ -531,15 +690,20 @@ int main(int argc, char** argv) {
                     j.field("t_algorithm_ns", ns);
                     j.field("t_algorithm_ms", static_cast<double>(ns) / 1e6);
                     j.field("neighbor_queries", qs.neighborQueries);
-                    j.field("candidates_examined", qs.candidatesExamined);
                     j.field("neighbors_returned", qs.neighborsReturned);
-                    // Exact for the grid: the query point is always in the
-                    // scanned block and is the only candidate skipped before
-                    // the distance test.
-                    j.field("distance_computations", qs.candidatesExamined - qs.neighborQueries);
+                    if (hasCandidates) {
+                        // Backend-specific (see index.counter_semantics). For
+                        // grid and CGAL the query point is always among the
+                        // candidates and is the only one skipped before the
+                        // exact distance test, so this difference is exact.
+                        j.field("candidates_examined", qs.candidatesExamined);
+                        j.field("distance_computations", qs.candidatesExamined - qs.neighborQueries);
+                    }
                     if (opt.instrumentation != Instrumentation::None) {
                         const bench::ExtendedQueryStats& ex = instrumented.extendedStats();
-                        j.field("cells_examined", ex.cellsExamined);
+                        if (backend == &grid) {
+                            j.field("cells_examined", ex.cellsExamined);
+                        }
                         j.field("max_candidates_per_query", ex.maxCandidatesPerQuery);
                         j.field("max_neighbors_per_query", ex.maxNeighborsPerQuery);
                         if (opt.instrumentation == Instrumentation::Detailed) {
@@ -608,6 +772,21 @@ int main(int argc, char** argv) {
                                 static_cast<std::uint64_t>(threw ? points.size() : points.size() - v.dominatedCount));
                         j.field("failure_reason", reason);
                         j.field("status", (!threw && v.valid()) ? "ok" : "invalid_solution");
+                        // CDS diameter (secondary metric): hop diameter of the
+                        // subgraph induced by D, computed after the timer with
+                        // the independent grid, once per distinct CDS.
+                        if (!threw && v.valid()) {
+                            const std::string h = bench::toHex64(bench::idSetFingerprint(res.selectedIds));
+                            auto it = diameterByHash.find(h);
+                            if (it == diameterByHash.end()) {
+                                const auto dt0 = Clock::now();
+                                const long long d = bench::cdsDiameter(points, grid, res.selectedIds, opt.radius);
+                                j.field("t_cds_diameter_ms", msSince(dt0));
+                                it = diameterByHash.emplace(h, d).first;
+                            }
+                            if (it->second >= 0) j.field("cds_diameter", static_cast<std::int64_t>(it->second));
+                            else j.null_field("cds_diameter");
+                        }
                     } else {
                         j.field("validated", false);
                         j.field("status", "ok_unvalidated");
@@ -627,6 +806,7 @@ int main(int argc, char** argv) {
         j.endArray();
 
         writeMemory(j, "process_memory_final");
+        j.field("t_total_ms_before_output", msSince(processStart));
         j.endObject();
     } catch (const std::exception& e) {
         std::fprintf(stderr, "error: %s\n", e.what());

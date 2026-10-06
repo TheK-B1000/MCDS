@@ -1,7 +1,7 @@
 {
-  "study_id": "smoke",
-  "study_seed": 20261005,
-  "description": "End-to-end smoke test of the experiment pipeline. Not a scientific study.",
+  "study_id": "precision_pilot",
+  "study_seed": 20261010,
+  "description": "Precision pilot: justifies the final replicate count. Representative cells (all five geometries, two sizes, middle density) with 40 independent graphs each; read precision_curve.csv (CI half-width of paired differences vs k graphs). Pilot outcomes may inform the protocol; final outcomes may not.",
   "algorithms": [
     "marathe",
     "wan",
@@ -18,13 +18,14 @@
       "cluster_bridge"
     ],
     "sizes": [
-      200
+      1000,
+      5000
     ],
     "densities": [
       8.0
     ],
     "radius": 1.0,
-    "replicates": 2,
+    "replicates": 40,
     "geometry_parameters": {
       "clustered": {
         "clusters": 4,
@@ -46,7 +47,7 @@
   },
   "connectivity_rule": {
     "mode": "resample_until_connected",
-    "max_attempts": 50
+    "max_attempts": 80
   },
   "timing": {
     "repetitions": 3,
@@ -54,11 +55,12 @@
     "instrumentation": "none",
     "process_mode": "shared",
     "validate": "all",
-    "timeout_seconds": 600
+    "timeout_seconds": 1800
   },
-  "memory_probe": true,
-  "counter_pass": "basic",
+  "memory_probe": false,
+  "counter_pass": null,
   "exact": {
-    "max_n": 0
+    "max_n": 0,
+    "timeout_seconds": 600
   }
 }

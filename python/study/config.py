@@ -17,6 +17,11 @@ KNOWN_GEOMETRIES = ("uniform", "clustered", "perturbed_grid", "corridor", "clust
 INSTRUMENTATION_LEVELS = ("none", "basic", "detailed")
 CONNECTIVITY_MODES = ("resample_until_connected", "accept_all")
 PROCESS_MODES = ("shared", "isolated")
+# Spatial-query backends. "cgal" is the primary backend of the final study;
+# "grid" is the independent secondary backend; "explicit" materialises the UDG
+# (representation ablation only). There is no automatic fallback between them.
+SPATIAL_BACKENDS = ("cgal", "grid", "explicit")
+PRIMARY_SPATIAL_BACKEND = "cgal"
 EXACT_HARD_MAX_N = 20
 
 # Parameters `generators.generate` accepts (density is a factor, not a param).
@@ -29,6 +34,7 @@ DEFAULTS: dict[str, Any] = {
     "description": "",
     "final": False,
     "algorithms": list(KNOWN_ALGORITHMS),
+    "spatial_backend": PRIMARY_SPATIAL_BACKEND,
     "connectivity_rule": {"mode": "resample_until_connected", "max_attempts": 50},
     "timing": {
         "repetitions": 5,
@@ -40,7 +46,7 @@ DEFAULTS: dict[str, Any] = {
     },
     "memory_probe": True,
     "counter_pass": "basic",
-    "exact": {"max_n": 0},
+    "exact": {"max_n": 0, "timeout_seconds": 600},
     "keep_rejected_datasets": False,
     "output_dir": None,
 }
@@ -134,6 +140,18 @@ def resolve(raw: dict[str, Any]) -> dict[str, Any]:
             if not entry["radii"] or any(not float(r) > 0 for r in entry["radii"]):
                 raise ConfigError(f"{entry['name']}: radii must be positive")
 
+    backends = cfg["spatial_backend"]
+    if isinstance(backends, str):
+        backends = [backends]
+    if not isinstance(backends, list) or not backends or len(set(backends)) != len(backends):
+        raise ConfigError("spatial_backend must be a backend name or a list of distinct backend names")
+    for b in backends:
+        if b not in SPATIAL_BACKENDS:
+            raise ConfigError(f"unknown spatial_backend {b!r}; expected one of {SPATIAL_BACKENDS}")
+    if cfg["final"] and cfg["spatial_backend"] != PRIMARY_SPATIAL_BACKEND:
+        raise ConfigError(f"a final study must use spatial_backend = {PRIMARY_SPATIAL_BACKEND!r} only; "
+                          "backend comparisons belong in a separate study")
+
     rule = cfg["connectivity_rule"]
     if rule.get("mode") not in CONNECTIVITY_MODES:
         raise ConfigError(f"connectivity_rule.mode must be one of {CONNECTIVITY_MODES}")
@@ -158,10 +176,19 @@ def resolve(raw: dict[str, Any]) -> dict[str, Any]:
     max_n = int(cfg["exact"].get("max_n", 0))
     if not 0 <= max_n <= EXACT_HARD_MAX_N:
         raise ConfigError(f"exact.max_n must be within [0, {EXACT_HARD_MAX_N}] (exhaustive search)")
+    _unknown(set(cfg["exact"]), {"max_n", "timeout_seconds"}, "exact")
+    if not float(cfg["exact"]["timeout_seconds"]) > 0:
+        raise ConfigError("exact.timeout_seconds must be positive")
 
     if not cfg["output_dir"]:
         cfg["output_dir"] = f"results/studies/{cfg['study_id']}"
     return cfg
+
+
+def backends(cfg: dict[str, Any]) -> list[str]:
+    """The study's spatial backends, in configured order (first = probe backend)."""
+    b = cfg["spatial_backend"]
+    return [b] if isinstance(b, str) else list(b)
 
 
 def load(path: Path) -> dict[str, Any]:

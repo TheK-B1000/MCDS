@@ -2,17 +2,40 @@
   "study_id": "real_world_scaling",
   "study_seed": 20261008,
   "description": "TEMPLATE (RQ9). Replace paths with canonical CSVs produced by python/import_dataset.py (projected, metres). Each entry carries its own radii (radius sweep). Disconnected inputs are recorded, never repaired silently; use prepare_real_dataset.py --largest-connected-component explicitly if that is the pre-declared rule.",
-  "algorithms": ["marathe", "wan", "funke", "li"],
+  "algorithms": [
+    "marathe",
+    "wan",
+    "funke",
+    "li"
+  ],
+  "spatial_backend": "cgal",
   "external": {
     "datasets": [
-      {"name": "region_A_100k", "path": "datasets/real/region_A_100k.csv", "radii": [50.0, 100.0, 200.0],
-       "units": "meters", "source_path": "data/raw/region_A.geojson",
-       "notes": "placeholder; do not run until the CSV exists"}
+      {
+        "name": "region_A_100k",
+        "path": "datasets/real/region_A_100k.csv",
+        "radii": [
+          50.0,
+          100.0,
+          200.0
+        ],
+        "units": "meters",
+        "source_path": "data/raw/region_A.geojson",
+        "notes": "placeholder; do not run until the CSV exists"
+      }
     ]
   },
-  "timing": {"repetitions": 3, "warmups": 1, "instrumentation": "none", "process_mode": "shared",
-             "validate": "all", "timeout_seconds": 7200},
+  "timing": {
+    "repetitions": 3,
+    "warmups": 1,
+    "instrumentation": "none",
+    "process_mode": "shared",
+    "validate": "all",
+    "timeout_seconds": 7200
+  },
   "memory_probe": true,
   "counter_pass": "basic",
-  "exact": {"max_n": 0}
+  "exact": {
+    "max_n": 0
+  }
 }

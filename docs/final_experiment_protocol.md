@@ -1,9 +1,12 @@
 # v1 Final Experiment Protocol (pre-registered)
 
-**Status: LOCKED — decisions recorded 2026-10-05.** This protocol is fixed
-before any final data is collected and is tagged with the code as
-`v1.0-final-experiment`. From the first final run onward, nothing below may be
-changed in response to results. A scientific change (algorithm semantics,
+**Status: NOT YET LOCKED.** Decisions recorded on 2026-10-05 stand (no
+directional hypotheses, CGAL as the primary backend, machine preparation,
+Li bound not claimed). Still open before the lock: the replicate count
+(justified by the precision pilot, §4) and the final review of the
+experimental cells. When locked, the protocol and code are tagged together
+(e.g. `v1.0-final-experiment`; no such tag exists yet). From the first final
+run onward, nothing below may be changed in response to results. A scientific change (algorithm semantics,
 timing boundary, generator, validator, metric definition, exclusion rule or
 schema) means: stop, document it, create a new methodology revision (new tag,
 new `study_id`), and rerun the affected results. Ordinary bugs found during
@@ -58,8 +61,15 @@ centralized Wan-level MIS").
 * n ∈ {500, 1000, 2000, 5000, 10000}.
 * Density target ∈ {5, 8, 12} points per unit area at r = 1.0. Observed
   degree statistics are recorded; the target is not assumed to be achieved.
-* **Replicates: 20 independent graph instances per cell** (a multiple of 4,
-  so execution positions are exactly balanced within each cell). The graph
+* **Replicates: OPEN — chosen from the precision pilot before the lock.**
+  `experiments/precision_pilot.json` collects 40 independent graphs per
+  representative cell; `precision_curve.csv` reports the 95% CI half-width
+  of the paired differences ΔCDS = |D_A| − |D_B| and ΔT = T_A − T_B using the
+  first k = 5, 10, 15, 20, 25, 30, 40 graphs. The final count is the smallest
+  multiple of 4 at which those half-widths have stabilised (documented with
+  the numbers in `methodology_audit.md`). `final.json` currently holds a
+  placeholder (20). A multiple of 4 keeps execution positions exactly
+  balanced within each cell. The graph
   instance is the statistical unit; timing repetitions on one graph are
   technical replicates, summarised by their median, and never counted as
   additional samples. Results are reported as distributions, paired effects
@@ -82,7 +92,18 @@ centralized Wan-level MIS").
 * No other exclusions. Outlier repetitions are not removed; the per-graph
   median is the robust summary.
 
-## 6. Timing methodology
+## 6. Spatial backend
+
+All primary comparisons use a common CGAL-backed spatial-query interface
+(`spatial_backend = "cgal"`, CGAL 6.1.2 `Kd_tree` + `Fuzzy_iso_box` candidate
+retrieval; adjacency decided by the exact predicate `distanceSquared <= r²`).
+An independently implemented uniform-grid backend and a brute-force geometric
+reference are used for differential validation (every graph is cross-checked
+against the grid before it is run) and for the optional backend-sensitivity
+study. A final config with any other backend is rejected, and there is no
+fallback if CGAL is unavailable.
+
+## 7. Timing methodology
 
 As in `docs/experimental_methodology.md`: Release build, `instrumentation=none`,
 shared process per graph, 1 warmup + 5 timed repetitions interleaved across
@@ -103,25 +124,30 @@ seeded Williams-design schedule. Hardware, OS, power plan, compiler,
 dependency versions, Git commit and configuration hash are recorded
 automatically with the study (`environment.json`, `methodology_manifest.json`).
 
-## 7. Metrics
+## 8. Metrics
 
-Primary: `valid_solution`, `cds_size`, `cds_fraction`, `t_algorithm_ms`.
-Secondary: `neighbor_queries`, `candidates_examined`, `distance_computations`,
-`core_count`, `connector_count`, `heap_peak_additional_bytes`, graph statistics.
-Diagnostic (counter pass): `cells_examined`, `max_candidates_per_query`,
-`max_neighbors_per_query`.
+Taxonomy as in `docs/experimental_methodology.md` §5 and
+`python/study/schema.py METRIC_TAXONOMY`.
+Primary: `valid_solution`, `t_algorithm_ms`, `cds_size`, `cds_fraction`.
+Secondary: `heap_peak_additional_bytes`, `t_spatial_index_ms`,
+`neighbor_queries`, `neighbors_returned`, `cds_diameter`, `empirical_ratio`
+(exact_small study only).
+Diagnostic: `core_count`, `connector_count`, validity components,
+`max_neighbors_per_query`. Backend-specific diagnostics (`cgal_*`, `grid_*`,
+`index_bytes`) are reported within one backend only.
 
-## 8. Statistical analysis
+## 9. Statistical analysis
 
 Exactly as implemented in `python/study/analysis.py`:
 unit = graph; per-graph median runtime; per cell × algorithm descriptives with
 95% percentile-bootstrap CIs (B = 2000, seeded); Wilson CIs for validity;
-paired comparisons on identical graphs (CDS difference with bootstrap CI,
-Cohen's d_z, wins/ties/losses; runtime geometric-mean ratio with bootstrap CI).
+paired comparisons on identical graphs for `t_algorithm_ms`, `cds_size`,
+`cds_fraction` and `cds_diameter` (difference with bootstrap CI, Cohen's d_z,
+wins/ties/losses; runtime also as geometric-mean ratio with bootstrap CI).
 No hypothesis tests, no pooling across cells. Scaling is described per
 geometry × density; any fitted exponent (if added) is exploratory.
 
-## 9. Planned tables and figures
+## 10. Planned tables and figures
 
 Tables: per-cell summary (median [IQR], CI) for CDS size, fraction, runtime;
 validity table; paired-comparison table; generation acceptance table.
@@ -129,21 +155,28 @@ Figures: runtime / CDS size / CDS fraction / queries / candidates / distance
 computations / memory vs n (per density, faceted by geometry); the same vs
 density (per n); by geometry; runtime vs mean degree; CDS fraction vs mean
 degree; runtime vs neighbour operations; validity rate; per-cell Pareto
-(runtime vs CDS fraction); empirical ratio vs n (exact_small study).
+(CDS size vs T_algorithm, CDS size vs neighbour queries, CDS fraction vs
+T_algorithm, empirical ratio vs T_algorithm); empirical ratio vs n
+(exact_small study); CDS diameter by geometry.
 Every figure states the number of graphs per point.
 
-## 10. Reporting constraints
+## 11. Reporting constraints
 
 * Theoretical guarantees are attributed to the papers' algorithms only, and
   only after primary-source verification; never to our implementations.
-* `empirical_ratio` is labelled EMPIRICAL APPROXIMATION RATIO.
+* `empirical_ratio` is labelled EMPIRICAL APPROXIMATION RATIO. Exact-solver
+  timeouts/errors are reported (`exact_status`); such graphs keep their
+  heuristic rows.
+* No novelty ("first …") claim until the literature search in
+  `docs/related_work_matrix.md` is complete.
 * Runtime differences are reported as properties of *these implementations*
   (centralised simulations), not of the distributed algorithms.
 
-## 11. Freeze procedure
+## 12. Freeze procedure
 
-1. Decisions above recorded; `METHODOLOGY_VERSION` in
-   `python/study/__init__.py` set to `v1.0-final-experiment`.
+1. Replicate count chosen from the precision pilot and written into
+   `experiments/final.json`; cells reviewed; `METHODOLOGY_VERSION` in
+   `python/study/__init__.py` set to the lock label.
 2. Run the full test suites; commit; `git tag -a v1.0-final-experiment`.
 3. `py -3 python/run_study.py reproduce --config experiments/final.json`
    on a clean tree (the runner refuses otherwise).

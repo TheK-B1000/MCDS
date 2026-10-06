@@ -9,7 +9,7 @@ Bump ``SCHEMA_VERSION`` whenever a column is added, removed or redefined.
 
 from __future__ import annotations
 
-SCHEMA_VERSION = "mcds-results-1"
+SCHEMA_VERSION = "mcds-results-2"
 
 # Execution phases. Only TIMED rows enter runtime statistics.
 PHASE_WARMUP = "warmup"
@@ -48,6 +48,13 @@ RAW_RUN_COLUMNS = [
     "density_target",
     "dataset_sha256",
     "points_fingerprint",
+    # spatial backend (one per row; never mixed within an algorithm comparison)
+    "spatial_backend",
+    "spatial_index_name",
+    "t_spatial_index_ms",
+    "index_bytes",
+    "index_heap_peak_bytes",
+    "backend_crosscheck",
     # execution
     "phase",
     "repetition",
@@ -63,13 +70,17 @@ RAW_RUN_COLUMNS = [
     "t_validation_ms",
     # spatial / neighbour work
     "neighbor_queries",
-    "candidates_examined",
-    "distance_computations",
     "neighbors_returned",
-    "avg_candidates_per_query",
     "avg_neighbors_per_query",
-    "cells_examined",
-    "max_candidates_per_query",
+    # backend-specific diagnostics: filled only for their own backend, else empty
+    "grid_candidates_examined",
+    "grid_distance_computations",
+    "grid_avg_candidates_per_query",
+    "grid_cells_examined",
+    "grid_max_candidates_per_query",
+    "cgal_box_candidates",
+    "cgal_exact_distance_evaluations",
+    "cgal_max_box_candidates_per_query",
     "max_neighbors_per_query",
     "query_time_ns",
     # memory (memory_probe rows only)
@@ -86,6 +97,7 @@ RAW_RUN_COLUMNS = [
     "roles_reported",
     "duplicate_ids",
     "cds_hash",
+    "cds_diameter",
     "opt_size",
     "empirical_ratio",
     # validation
@@ -129,9 +141,12 @@ DATASET_COLUMNS = [
     "bbox_max_x",
     "bbox_max_y",
     "generator_parameters_json",
+    "probe_spatial_backend",
+    "backend_crosscheck",
     "t_dataset_ms",
     "t_spatial_index_ms",
     "t_graph_stats_ms",
+    "t_connectivity_ms",
     "t_exact_ms",
     "index_backend",
     "index_cell_size",
@@ -176,6 +191,22 @@ GENERATION_ATTEMPT_COLUMNS = [
     "dataset_sha256",
     "points_fingerprint",
 ]
+
+# Metric taxonomy (documented in docs/experimental_methodology.md). Backend-
+# specific diagnostics are never compared across backends.
+METRIC_TAXONOMY = {
+    "primary": ["valid_solution", "t_algorithm_ms", "cds_size", "cds_fraction"],
+    "secondary": ["heap_peak_additional_bytes", "t_spatial_index_ms", "neighbor_queries", "neighbors_returned",
+                  "cds_diameter", "empirical_ratio"],
+    "diagnostic": ["core_count", "connector_count", "domination_valid", "connectivity_valid", "undominated_count",
+                   "max_neighbors_per_query", "query_time_ns"],
+    # Each is defined for one backend only and is never compared across backends.
+    "backend_specific_diagnostic": ["grid_candidates_examined", "grid_distance_computations",
+                                    "grid_avg_candidates_per_query", "grid_cells_examined",
+                                    "grid_max_candidates_per_query", "cgal_box_candidates",
+                                    "cgal_exact_distance_evaluations", "cgal_max_box_candidates_per_query",
+                                    "index_bytes", "index_heap_peak_bytes"],
+}
 
 FAILURE_COLUMNS = [
     "schema_version",

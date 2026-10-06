@@ -2,24 +2,68 @@
   "study_id": "exact_small",
   "study_seed": 20261007,
   "description": "RQ10: empirical approximation ratio |D|/OPT on instances small enough for exhaustive exact search (n <= 16). Results describe these small instances only and say nothing about the papers' theoretical ratios.",
-  "algorithms": ["marathe", "wan", "funke", "li"],
+  "algorithms": [
+    "marathe",
+    "wan",
+    "funke",
+    "li"
+  ],
+  "spatial_backend": "cgal",
   "synthetic": {
-    "geometries": ["uniform", "clustered", "perturbed_grid", "corridor", "cluster_bridge"],
-    "sizes": [10, 13, 16],
-    "densities": [3.0, 5.0, 8.0],
+    "geometries": [
+      "uniform",
+      "clustered",
+      "perturbed_grid",
+      "corridor",
+      "cluster_bridge"
+    ],
+    "sizes": [
+      10,
+      13,
+      16
+    ],
+    "densities": [
+      3.0,
+      5.0,
+      8.0
+    ],
     "radius": 1.0,
     "replicates": 24,
     "geometry_parameters": {
-      "clustered": {"clusters": 2, "spread": 0.8},
-      "corridor": {"corridor_width": 1.5},
-      "cluster_bridge": {"clusters": 2, "spread": 0.45, "bridge_fraction": 0.25, "bridge_width": 0.6},
-      "perturbed_grid": {"jitter": 0.15}
+      "clustered": {
+        "clusters": 2,
+        "spread": 0.8
+      },
+      "corridor": {
+        "corridor_width": 1.5
+      },
+      "cluster_bridge": {
+        "clusters": 2,
+        "spread": 0.45,
+        "bridge_fraction": 0.25,
+        "bridge_width": 0.6
+      },
+      "perturbed_grid": {
+        "jitter": 0.15
+      }
     }
   },
-  "connectivity_rule": {"mode": "resample_until_connected", "max_attempts": 200},
-  "timing": {"repetitions": 1, "warmups": 0, "instrumentation": "none", "process_mode": "shared",
-             "validate": "all", "timeout_seconds": 600},
+  "connectivity_rule": {
+    "mode": "resample_until_connected",
+    "max_attempts": 200
+  },
+  "timing": {
+    "repetitions": 1,
+    "warmups": 0,
+    "instrumentation": "none",
+    "process_mode": "shared",
+    "validate": "all",
+    "timeout_seconds": 600
+  },
   "memory_probe": false,
   "counter_pass": null,
-  "exact": {"max_n": 16}
+  "exact": {
+    "max_n": 16,
+    "timeout_seconds": 600
+  }
 }

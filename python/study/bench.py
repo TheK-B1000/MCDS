@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-BENCH_SCHEMA = "mcds-bench/1"
+BENCH_SCHEMA = "mcds-bench/2"
 
 _CANDIDATE_DIRS = (
     "cpp/build-msvc/Release",
@@ -51,6 +51,7 @@ def run_bench(
     csv_path: Path,
     radius: float,
     *,
+    spatial_backend: str,
     algorithms: list[str] | None = None,
     repetitions: int = 1,
     warmups: int = 0,
@@ -73,7 +74,8 @@ def run_bench(
 
     cmd = [str(binary), "--input", str(csv_path), "--radius", repr(float(radius)), "--output", str(tmp),
            "--instrumentation", instrumentation, "--validate", validate,
-           "--repetitions", str(repetitions), "--warmups", str(warmups)]
+           "--repetitions", str(repetitions), "--warmups", str(warmups),
+           "--spatial-backend", spatial_backend]
     if algorithms:
         cmd += ["--algorithms", ",".join(algorithms)]
     if exact_max_n:
@@ -103,6 +105,11 @@ def run_bench(
     if data.get("schema") != BENCH_SCHEMA:
         tmp.unlink(missing_ok=True)
         return BenchOutcome(False, None, f"unexpected bench schema {data.get('schema')!r}", proc.returncode)
+    if data.get("spatial_backend") != spatial_backend:
+        # Never accept a substituted backend: provenance would be wrong.
+        tmp.unlink(missing_ok=True)
+        return BenchOutcome(False, None, f"bench used backend {data.get('spatial_backend')!r}, "
+                                         f"requested {spatial_backend!r}", proc.returncode)
 
     if target is not None:
         os.replace(tmp, target)
@@ -116,5 +123,5 @@ def build_info(binary: Path) -> dict[str, Any] | None:
     with tempfile.TemporaryDirectory() as d:
         csv_path = Path(d) / "one.csv"
         csv_path.write_text("id,x,y\n0,0.0,0.0\n", encoding="utf-8")
-        out = run_bench(binary, csv_path, 1.0, graph_only=True, timeout_s=60)
+        out = run_bench(binary, csv_path, 1.0, spatial_backend="grid", graph_only=True, timeout_s=60)
         return out.data.get("build") if out.ok and out.data else None

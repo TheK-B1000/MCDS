@@ -9,6 +9,7 @@ from typing import Any
 from . import METHODOLOGY_VERSION
 from .config import config_sha256
 from .fingerprint import sha256_file
+from .schema import METRIC_TAXONOMY
 from .schema import RAW_RUN_COLUMNS, SCHEMA_VERSION
 
 # Verification status is NOT hard-coded here: it lives in docs/source_audit.md
@@ -89,6 +90,18 @@ def build(study_dir: Path, repo_root: Path | None = None) -> dict[str, Any]:
         "study_seed": cfg["study_seed"],
         "seed_derivation": "sha256('graph', study_seed, geometry, n, density, radius, replicate, attempt)[:63 bits]",
         "connectivity_rule": cfg["connectivity_rule"],
+        "spatial_backend": cfg["spatial_backend"],
+        "spatial_backend_details": {
+            "primary": "cgal: CGAL::Kd_tree + CGAL::Fuzzy_iso_box (dD Spatial Searching); adjacency decided by "
+                       "the exact predicate distanceSquared(p,q) <= r^2",
+            "reference": "uniform-grid GridSpatialIndex (independent implementation; validation, CDS diameter and a "
+                         "full per-graph neighbour-set cross-check)",
+            "oracle": "brute force O(n^2) in tests only",
+            "cgal": env.get("cgal"),
+            "index_lifecycle": "one index per graph per process, built before any algorithm, reused read-only by "
+                               "all algorithms (counters reset per execution)",
+        },
+        "metric_taxonomy": METRIC_TAXONOMY,
         "validation_rules": [
             "Domination: every vertex is selected or adjacent (distance <= r) to a selected vertex.",
             "Connectivity: the subgraph induced by the selected set is connected (BFS over selected vertices only).",

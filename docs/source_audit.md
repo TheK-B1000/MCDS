@@ -60,3 +60,15 @@ A paper guarantee is not assumed to transfer.
 7. **Funke query accounting — resolved.** The private `isConnected` call was removed from the timed `solve()`; connectivity is checked once, untimed, for every algorithm. Output identical on connected inputs; algorithm-stage queries drop by exactly `n`.
 
 The design notes `docs/{marathe,wan,funke,li}.md` predate this audit and are kept for history only. This file and `docs/algorithms/` are authoritative for source status.
+
+---
+
+## Spatial substrate (not a paper source)
+
+CGAL 6.1.2 (dD Spatial Searching) is the primary spatial-query backend of the
+final study. It is an implementation dependency, not an algorithm source: it
+only retrieves candidate neighbours, and adjacency is decided by the project's
+exact predicate `distanceSquared <= r²`. The paper-to-code conclusions above
+are unaffected: the same algorithm code runs on every backend, and all four
+algorithms return identical CDSs through CGAL and the independent grid
+(`cpp/tests/test_spatial_backends.cpp`; `docs/methodology_audit.md` §10).

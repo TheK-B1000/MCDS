@@ -76,6 +76,30 @@ def _display_path(path: str, root: Path) -> str:
         return str(path)
 
 
+def _backend_counters(backend: str, run: dict[str, Any], queries: Any) -> dict[str, Any]:
+    """Backend-specific work counters, each under its own backend's name.
+
+    grid: points in scanned cells (incl. the query point), exact distance
+    tests (= candidates - queries), cells scanned. cgal: points reported by the
+    CGAL Fuzzy_iso_box search (incl. the query point) and the exact distance
+    tests on them; CGAL's internal kd-tree node visits are not exposed and are
+    not reported. explicit: no per-query candidate work exists.
+    """
+    cand = run.get("candidates_examined")
+    out: dict[str, Any] = {}
+    if backend == "grid":
+        out["grid_candidates_examined"] = cand
+        out["grid_distance_computations"] = run.get("distance_computations")
+        out["grid_avg_candidates_per_query"] = (cand / queries) if (queries and cand is not None) else None
+        out["grid_cells_examined"] = run.get("cells_examined")
+        out["grid_max_candidates_per_query"] = run.get("max_candidates_per_query")
+    elif backend == "cgal":
+        out["cgal_box_candidates"] = cand
+        out["cgal_exact_distance_evaluations"] = run.get("distance_computations")
+        out["cgal_max_box_candidates_per_query"] = run.get("max_candidates_per_query")
+    return out
+
+
 def _cell(v: Any) -> Any:
     if v is None:
         return ""
@@ -142,6 +166,10 @@ class Study:
         if snap["git"]["dirty"]:
             self.log("WARNING: git working tree is dirty; results will record git_dirty=true.")
         build = snap.get("solver_build") or {}
+        needs_cgal = [b for b in config_mod.backends(self.cfg) if b in ("cgal", "explicit")]
+        if needs_cgal and not build.get("cgal_available"):
+            raise StudyError(f"config requests spatial backend(s) {needs_cgal} but the solver was built without "
+                             "CGAL (MCDS_WITH_CGAL=OFF or CGAL not found). Refusing to run: no fallback to grid.")
         if build.get("config") not in ("Release", None) or build.get("ndebug") is False:
             msg = f"solver build is {build.get('config')!r} (ndebug={build.get('ndebug')}); timings unreliable"
             if self.cfg["final"]:
@@ -172,59 +200,94 @@ class Study:
         return self.out / "state" / "datasets" / f"{p.plan_index:06d}_{p.key}.json"
 
     def prepare_datasets(self) -> list[dict[str, Any]]:
-        records = []
         planned = datasets_mod.plan(self.cfg)
+        records: list[dict[str, Any] | None] = [None] * len(planned)
+        pending = [p for p in planned if not self._dataset_state_path(p).is_file()]
+        cached = len(planned) - len(pending)
+        progress_mod.announce(
+            f"datasets: {len(planned)} planned, {cached} cached, {len(pending)} to generate",
+            enabled=self.show_progress,
+        )
+        # Load cached first (instant); bar covers only remaining work so ETA is honest.
+        for p in planned:
+            path = self._dataset_state_path(p)
+            if path.is_file():
+                records[p.plan_index] = _read_json(path)
         with progress_mod.track(
-            planned, total=len(planned), desc="datasets", unit="graph", enabled=self.show_progress,
+            pending,
+            total=len(pending),
+            desc=f"{self.study_id} datasets",
+            unit="graph",
+            enabled=self.show_progress,
         ) as bar:
             for p in bar:
                 path = self._dataset_state_path(p)
-                if path.is_file():
-                    records.append(_read_json(path))
-                    if hasattr(bar, "set_postfix_str"):
-                        bar.set_postfix_str(f"cached {p.dataset_id[:40]}", refresh=False)
-                    continue
                 rec = datasets_mod.prepare(p, self.cfg, self.repo_root, self.out, self.bench)
                 _atomic_json(path, rec)
-                records.append(rec)
-                self.log(f"[dataset {p.plan_index + 1}/{len(planned)}] {p.dataset_id}: {rec['status']}"
-                         f" (attempts={len(rec['attempts'])})")
+                records[p.plan_index] = rec
+                if not self.show_progress or rec["status"] != "ok":
+                    self.log(
+                        f"[dataset {p.plan_index + 1}/{len(planned)}] {p.dataset_id}: "
+                        f"{rec['status']} (attempts={len(rec['attempts'])})"
+                    )
                 if hasattr(bar, "set_postfix_str"):
                     bar.set_postfix_str(f"{rec['status']} {p.dataset_id[:36]}", refresh=False)
-        return records
+        return [r for r in records if r is not None]
 
     # ------------------------------------------------------------------- runs
     def _graph_dir(self, rec: dict[str, Any]) -> Path:
         return self.out / "graphs" / rec["graph_id"]
 
     def _steps(self, rec: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+        """Execution steps for one graph.
+
+        Every step of a backend gives all algorithms the same backend; a
+        backend is never mixed within an algorithm comparison. With several
+        backends (sensitivity / ablation studies only) the backend order
+        alternates between replicates so neither backend always runs first.
+        """
         t = self.cfg["timing"]
         algos = self.cfg["algorithms"]
-        order, row = execution_order(algos, self.cfg["study_seed"], schedule_index(self.cfg["study_seed"], rec["planned"]))
+        sidx = schedule_index(self.cfg["study_seed"], rec["planned"])
+        order, row = execution_order(algos, self.cfg["study_seed"], sidx)
+        backends = config_mod.backends(self.cfg)
+        shift = sidx % len(backends)
+        backends = backends[shift:] + backends[:shift]
         steps: list[tuple[str, dict[str, Any]]] = []
-        common = {"exact_max_n": int(self.cfg["exact"]["max_n"]), "validate": t["validate"]}
-        if t["process_mode"] == "shared":
-            steps.append(("timing.json", {"binary": self.bench, "algorithms": order, "repetitions": t["repetitions"],
-                                          "warmups": t["warmups"], "instrumentation": t["instrumentation"],
-                                          "emit_solution": True, **common}))
-        else:
-            for a in order:
-                steps.append((f"timing_{a}.json", {"binary": self.bench, "algorithms": [a],
-                                                   "repetitions": t["repetitions"], "warmups": t["warmups"],
-                                                   "instrumentation": t["instrumentation"],
-                                                   "emit_solution": True, **common}))
-        if self.bench_mem is not None:
-            for a in order:
-                steps.append((f"memory_{a}.json", {"binary": self.bench_mem, "algorithms": [a], "repetitions": 1,
-                                                   "warmups": 0, "instrumentation": "none", "exact_max_n": 0,
-                                                   "validate": "all"}))
-        if self.cfg["counter_pass"]:
-            steps.append(("counters.json", {"binary": self.bench, "algorithms": order, "repetitions": 1,
-                                            "warmups": 0, "instrumentation": self.cfg["counter_pass"],
-                                            "exact_max_n": 0, "validate": "all"}))
-        for _, s in steps:
-            s["schedule_row"] = row
-            s["order"] = order
+        # Exact OPT never runs inside a timing process: it has its own step
+        # (below) so a slow or failing exact search cannot lose heuristic rows.
+        common = {"exact_max_n": 0, "validate": t["validate"]}
+        for b in backends:
+            if t["process_mode"] == "shared":
+                steps.append((f"timing__{b}.json", {"binary": self.bench, "algorithms": order,
+                                                    "repetitions": t["repetitions"], "warmups": t["warmups"],
+                                                    "instrumentation": t["instrumentation"],
+                                                    "emit_solution": True, "spatial_backend": b, **common}))
+            else:
+                for a in order:
+                    steps.append((f"timing__{b}__{a}.json", {"binary": self.bench, "algorithms": [a],
+                                                             "repetitions": t["repetitions"], "warmups": t["warmups"],
+                                                             "instrumentation": t["instrumentation"],
+                                                             "emit_solution": True, "spatial_backend": b, **common}))
+            if self.bench_mem is not None:
+                for a in order:
+                    steps.append((f"memory__{b}__{a}.json", {"binary": self.bench_mem, "algorithms": [a],
+                                                             "repetitions": 1, "warmups": 0, "instrumentation": "none",
+                                                             "exact_max_n": 0, "validate": "all",
+                                                             "spatial_backend": b}))
+            if self.cfg["counter_pass"]:
+                steps.append((f"counters__{b}.json", {"binary": self.bench, "algorithms": order, "repetitions": 1,
+                                                      "warmups": 0, "instrumentation": self.cfg["counter_pass"],
+                                                      "exact_max_n": 0, "validate": "all", "spatial_backend": b}))
+        max_n = int(self.cfg["exact"]["max_n"])
+        if max_n > 0:
+            steps.append(("exact.json", {"binary": self.bench, "algorithms": None, "repetitions": 1, "warmups": 0,
+                                         "instrumentation": "none", "exact_max_n": max_n, "validate": "all",
+                                         "spatial_backend": config_mod.backends(self.cfg)[0], "graph_only": True,
+                                         "timeout_s": float(self.cfg["exact"]["timeout_seconds"])}))
+        for _, st in steps:
+            st["schedule_row"] = row
+            st["order"] = order
         return steps
 
     def run_graphs(self, records: list[dict[str, Any]]) -> None:
@@ -244,23 +307,36 @@ class Study:
         remaining_by_graph: dict[str, int] = {}
         for rec, _, _ in pending:
             remaining_by_graph[rec["graph_id"]] = remaining_by_graph.get(rec["graph_id"], 0) + 1
+        n_graphs = len(remaining_by_graph)
+        progress_mod.announce(
+            f"executions: {len(pending)} pending steps across {n_graphs} graphs "
+            f"({len(runnable) - n_graphs} graphs already complete)",
+            enabled=self.show_progress,
+        )
 
         with progress_mod.track(
-            pending, total=len(pending), desc="executions", unit="step", enabled=self.show_progress,
+            pending,
+            total=len(pending),
+            desc=f"{self.study_id} exec",
+            unit="step",
+            enabled=self.show_progress,
         ) as bar:
             for rec, fname, step in bar:
                 gdir = self._graph_dir(rec)
                 target = gdir / fname
                 failed = gdir / (fname + ".failed.json")
+                label = f"{rec['planned']['dataset_id'][:32]} {fname}"
                 if hasattr(bar, "set_postfix_str"):
-                    bar.set_postfix_str(f"{rec['planned']['dataset_id'][:32]} {fname}"[:48], refresh=False)
+                    bar.set_postfix_str(label[:48], refresh=False)
                 t0 = time.perf_counter()
                 outcome = bench_mod.run_bench(
                     step["binary"], Path(rec["csv_path"]), rec["planned"]["radius"],
-                    algorithms=step["algorithms"], repetitions=step["repetitions"], warmups=step["warmups"],
+                    spatial_backend=step["spatial_backend"], algorithms=step["algorithms"],
+                    repetitions=step["repetitions"], warmups=step["warmups"],
                     instrumentation=step["instrumentation"], validate=step["validate"],
                     exact_max_n=step["exact_max_n"], emit_solution=step.get("emit_solution", False),
-                    timeout_s=timeout, output_json=target,
+                    graph_only=step.get("graph_only", False),
+                    timeout_s=step.get("timeout_s", timeout), output_json=target,
                 )
                 if not outcome.ok:
                     _atomic_json(failed, {"step": fname, "error": outcome.error, "returncode": outcome.returncode,
@@ -276,6 +352,7 @@ class Study:
                     solver_name = "mcds_bench_mem" if step["binary"] == self.bench_mem else "mcds_bench"
                     _atomic_json(gdir / (fname + ".meta.json"), {
                         "schedule_row": step["schedule_row"], "order": step["order"],
+                        "spatial_backend": step["spatial_backend"],
                         "wall_s": time.perf_counter() - t0,
                         # Provenance at execution time (not study start), so a
                         # resumed study can never mislabel rows.
@@ -286,7 +363,7 @@ class Study:
                     })
                 gid = rec["graph_id"]
                 remaining_by_graph[gid] -= 1
-                if remaining_by_graph[gid] == 0:
+                if remaining_by_graph[gid] == 0 and not self.show_progress:
                     self.log(f"[graph] {rec['planned']['dataset_id']} done")
 
     # --------------------------------------------------------------- assembly
@@ -319,11 +396,20 @@ class Study:
             g = probe["graph"]
             real = rec.get("real_metadata") or {}
             gdir = self._graph_dir(rec)
-            timing_files = sorted(gdir.glob("timing*.json")) if gdir.is_dir() else []
-            timing_files = [f for f in timing_files if not f.name.endswith((".meta.json", ".failed.json"))]
-            exact = {}
-            if timing_files:
-                exact = _read_json(timing_files[0]).get("exact", {})
+            exact: dict[str, Any] = {"status": "disabled"}
+            t_exact = None
+            if int(self.cfg["exact"]["max_n"]) > 0:
+                exact_file = gdir / "exact.json"
+                exact_failed = gdir / "exact.json.failed.json"
+                if exact_file.is_file():
+                    exact_doc = _read_json(exact_file)
+                    exact = exact_doc.get("exact", {})
+                    t_exact = exact_doc["timing_ms"]["exact"]
+                elif exact_failed.is_file():
+                    err = _read_json(exact_failed).get("error") or ""
+                    exact = {"status": "timeout" if err.startswith("timeout") else "error", "error": err}
+                else:
+                    exact = {"status": "not_run"}
             opt = exact.get("opt_size") if exact.get("status") == "computed" else None
             tm = probe["timing_ms"]
             idx = probe["index"]
@@ -344,11 +430,14 @@ class Study:
                 "sampling": real.get("sampling"),
                 "bbox_min_x": bbox[0], "bbox_min_y": bbox[1], "bbox_max_x": bbox[2], "bbox_max_y": bbox[3],
                 "generator_parameters_json": json.dumps(rec.get("generator_parameters", {}), sort_keys=True),
+                "probe_spatial_backend": probe["spatial_backend"],
+                "backend_crosscheck": probe["backend_crosscheck"]["status"],
                 "t_dataset_ms": tm["dataset"], "t_spatial_index_ms": tm["spatial_index"],
-                "t_graph_stats_ms": tm["graph_stats"],
-                "t_exact_ms": (_read_json(timing_files[0])["timing_ms"]["exact"] if timing_files else None),
-                "index_backend": idx["backend"], "index_cell_size": idx["cell_size"],
-                "index_cells": idx["cells_x"] * idx["cells_y"], "index_bytes": idx["index_bytes"],
+                "t_graph_stats_ms": tm["graph_stats"], "t_connectivity_ms": tm.get("connectivity"),
+                "t_exact_ms": t_exact,
+                "index_backend": idx["backend"], "index_cell_size": idx.get("cell_size"),
+                "index_cells": (idx["cells_x"] * idx["cells_y"]) if "cells_x" in idx else None,
+                "index_bytes": idx.get("index_bytes"),
                 "dataset_bytes": probe["input"]["dataset_bytes"],
                 "edges": g["edges"], "mean_degree": g["mean_degree"], "min_degree": g["min_degree"],
                 "max_degree": g["max_degree"], "median_degree": g["median_degree"], "degree_std": g["degree_std"],
@@ -369,13 +458,13 @@ class Study:
                                      "detail": info.get("error", "")})
 
             for f in sorted(gdir.glob("*.json")):
-                if f.name.endswith((".meta.json", ".failed.json")):
+                if f.name.endswith((".meta.json", ".failed.json")) or f.name == "exact.json":
                     continue
                 meta_path = f.with_name(f.name + ".meta.json")
                 meta = _read_json(meta_path) if meta_path.is_file() else {}
                 data = _read_json(f)
-                phase_override = PHASE_MEMORY if f.name.startswith("memory_") else (
-                    PHASE_COUNTERS if f.name == "counters.json" else None)
+                phase_override = PHASE_MEMORY if f.name.startswith("memory__") else (
+                    PHASE_COUNTERS if f.name.startswith("counters__") else None)
                 process_mode = self.cfg["timing"]["process_mode"] if f.name.startswith("timing") else "isolated" \
                     if phase_override == PHASE_MEMORY else "shared"
                 for run in data.get("runs", []):
@@ -414,6 +503,11 @@ class Study:
             "source_type": p["source_type"], "geometry": p["geometry"], "n": n, "radius": p["radius"],
             "radius_units": p["radius_units"], "density_target": p["density_target"],
             "dataset_sha256": rec["dataset_sha256"], "points_fingerprint": data["input"]["points_fingerprint"],
+            "spatial_backend": data["spatial_backend"], "spatial_index_name": data["index"]["backend"],
+            "t_spatial_index_ms": data["timing_ms"]["spatial_index"],
+            "index_bytes": data["index"].get("index_bytes"),
+            "index_heap_peak_bytes": data["index"].get("index_heap_peak_bytes"),
+            "backend_crosscheck": data["backend_crosscheck"]["status"],
             "phase": phase, "repetition": run["repetition"], "sequence": run["sequence"],
             "process_mode": process_mode, "instrumentation": data["instrumentation"],
             "execution_order": ">".join(order or []),
@@ -421,13 +515,10 @@ class Study:
             "schedule_row": meta.get("schedule_row"),
             "t_algorithm_ns": run["t_algorithm_ns"], "t_algorithm_ms": run["t_algorithm_ms"],
             "t_validation_ms": run.get("t_validation_ms"),
-            "neighbor_queries": q, "candidates_examined": run.get("candidates_examined"),
-            "distance_computations": run.get("distance_computations"),
+            "neighbor_queries": q,
+            **_backend_counters(data["spatial_backend"], run, q),
             "neighbors_returned": run.get("neighbors_returned"),
-            "avg_candidates_per_query": (run["candidates_examined"] / q) if q else None,
             "avg_neighbors_per_query": (run["neighbors_returned"] / q) if q else None,
-            "cells_examined": run.get("cells_examined"),
-            "max_candidates_per_query": run.get("max_candidates_per_query"),
             "max_neighbors_per_query": run.get("max_neighbors_per_query"),
             "query_time_ns": run.get("query_time_ns"),
             "heap_peak_additional_bytes": run.get("heap_peak_additional_bytes"),
@@ -438,7 +529,7 @@ class Study:
             "cds_size": cds, "cds_fraction": (cds / n) if (cds is not None and n) else None,
             "core_count": run.get("core_count"), "connector_count": run.get("connector_count"),
             "roles_reported": run.get("roles_reported"), "duplicate_ids": run.get("duplicate_ids"),
-            "cds_hash": run.get("cds_hash"), "opt_size": opt,
+            "cds_hash": run.get("cds_hash"), "cds_diameter": run.get("cds_diameter"), "opt_size": opt,
             "empirical_ratio": (cds / opt) if (cds is not None and opt) else None,
             "validated": run.get("validated"), "valid_solution": run.get("valid_solution"),
             "domination_valid": run.get("domination_valid"), "connectivity_valid": run.get("connectivity_valid"),
@@ -464,26 +555,33 @@ class Study:
             csv_path = Path(d) / "preflight.csv"
             write_csv(str(csv_path), generate("perturbed_grid", 64, 1, density=8.0, jitter=0.15).points)
             binaries = [self.bench] + ([self.bench_mem] if self.bench_mem else [])
-            for binary in binaries:
-                out = bench_mod.run_bench(binary, csv_path, 1.0, algorithms=self.cfg["algorithms"],
-                                          repetitions=1, warmups=0, timeout_s=300)
+            for binary, backend in ((bin_, b) for bin_ in binaries for b in config_mod.backends(self.cfg)):
+                out = bench_mod.run_bench(binary, csv_path, 1.0, spatial_backend=backend,
+                                          algorithms=self.cfg["algorithms"], repetitions=1, warmups=0,
+                                          timeout_s=300)
                 if not out.ok or out.data is None:
-                    raise StudyError(f"preflight failed for {binary.name}: {out.error}")
+                    raise StudyError(f"preflight failed for {binary.name} / {backend}: {out.error}")
                 if out.data.get("status") != "ok":
                     raise StudyError(f"preflight graph unexpectedly {out.data.get('status')}")
                 bad = [r["algorithm"] for r in out.data["runs"] if r.get("status") != "ok"]
                 if bad or len(out.data["runs"]) != len(self.cfg["algorithms"]):
                     raise StudyError(f"preflight: invalid or missing results from {binary.name}: {bad}")
-        self.log(f"preflight: all {len(self.cfg['algorithms'])} algorithms returned valid CDSs")
+        self.log(f"preflight: all {len(self.cfg['algorithms'])} algorithms returned valid CDSs on "
+                 f"backend(s) {config_mod.backends(self.cfg)}")
 
     # -------------------------------------------------------------------- run
     def run(self, *, datasets_only: bool = False, skip_preflight: bool = False) -> dict[str, Any]:
+        progress_mod.announce(f"=== study {self.study_id} ===", enabled=self.show_progress)
         self._init_dir()
         if not datasets_only and not skip_preflight:
+            progress_mod.announce("phase: preflight", enabled=self.show_progress)
             self.preflight()
+        progress_mod.announce("phase: datasets", enabled=self.show_progress)
         records = self.prepare_datasets()
         if not datasets_only:
+            progress_mod.announce("phase: executions", enabled=self.show_progress)
             self.run_graphs(records)
+        progress_mod.announce("phase: assemble + fairness", enabled=self.show_progress)
         tables = self.assemble(records)
         self.write_outputs(tables)
         report = fairness.check(tables, self.cfg)

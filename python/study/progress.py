@@ -3,10 +3,14 @@
 Uses tqdm when available and enabled. Logging goes through ``tqdm.write`` so
 messages do not break the bar. Disable with ``show_progress=False`` or
 ``--no-progress`` on the CLI.
+
+Bars are sized to *remaining* work (cached / already-done items are skipped)
+so the ETA reflects wall time left, not a mix of instant cache hits.
 """
 
 from __future__ import annotations
 
+import sys
 from contextlib import contextmanager
 from typing import Any, Callable, Iterable, Iterator, TypeVar
 
@@ -16,6 +20,12 @@ try:
     from tqdm import tqdm as _tqdm
 except ImportError:  # pragma: no cover - preflight requires tqdm
     _tqdm = None  # type: ignore[misc, assignment]
+
+# Always show rate + ETA, even on narrow terminals / redirected stderr.
+_BAR_FORMAT = (
+    "{l_bar}{bar}| {n_fmt}/{total_fmt} {unit} "
+    "[{elapsed}<{remaining}, {rate_fmt}] {postfix}"
+)
 
 
 def make_logger(base: Callable[[str], None] | None = None) -> Callable[[str], None]:
@@ -29,9 +39,9 @@ def make_logger(base: Callable[[str], None] | None = None) -> Callable[[str], No
 
     def _log(msg: str) -> None:
         if _tqdm is not None:
-            _tqdm.write(str(msg))
+            _tqdm.write(str(msg), file=sys.stderr)
         else:
-            print(str(msg))
+            print(str(msg), file=sys.stderr)
 
     return _log
 
@@ -59,9 +69,20 @@ def track(
         unit=unit,
         dynamic_ncols=True,
         leave=leave,
-        mininterval=0.5,
+        mininterval=0.2,
+        miniters=1,
+        file=sys.stderr,
+        bar_format=_BAR_FORMAT,
+        ascii=False,
     )
     try:
         yield bar
     finally:
         bar.close()
+
+
+def announce(msg: str, *, enabled: bool = True) -> None:
+    """Phase banner that does not corrupt an active bar."""
+    if not enabled:
+        return
+    make_logger()(msg)

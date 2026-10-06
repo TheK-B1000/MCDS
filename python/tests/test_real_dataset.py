@@ -368,7 +368,7 @@ class MillionPointOptionalTests(unittest.TestCase):
             except FileNotFoundError:
                 self.skipTest("mcds_bench not built")
 
-            probe = run_bench(exe, out, 1.0, graph_only=True, timeout_s=600.0)
+            probe = run_bench(exe, out, 1.0, spatial_backend="cgal", graph_only=True, timeout_s=600.0)
             self.assertTrue(probe.ok, msg=probe.error)
             data = probe.data
             graph = data["graph"]

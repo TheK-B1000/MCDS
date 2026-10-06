@@ -1,26 +1,72 @@
 {
   "study_id": "final",
   "study_seed": 20261101,
-  "description": "v1 final study, pre-registered in docs/final_experiment_protocol.md and locked at tag v1.0-final-experiment. Run only from that clean commit after the machine-preparation steps. Any methodology change requires a new revision and a new study_id.",
+  "description": "v1 final study (primary algorithm comparison, CGAL backend only), pre-registered in docs/final_experiment_protocol.md. NOT YET LOCKED: synthetic.replicates is a placeholder until the precision pilot (experiments/precision_pilot.json) justifies the count. Run only from the tagged clean commit after the machine-preparation steps; any methodology change requires a new revision and study_id.",
   "final": true,
-  "algorithms": ["marathe", "wan", "funke", "li"],
+  "algorithms": [
+    "marathe",
+    "wan",
+    "funke",
+    "li"
+  ],
+  "spatial_backend": "cgal",
   "synthetic": {
-    "geometries": ["uniform", "clustered", "perturbed_grid", "corridor", "cluster_bridge"],
-    "sizes": [500, 1000, 2000, 5000, 10000],
-    "densities": [5.0, 8.0, 12.0],
+    "geometries": [
+      "uniform",
+      "clustered",
+      "perturbed_grid",
+      "corridor",
+      "cluster_bridge"
+    ],
+    "sizes": [
+      500,
+      1000,
+      2000,
+      5000,
+      10000
+    ],
+    "densities": [
+      5.0,
+      8.0,
+      12.0
+    ],
     "radius": 1.0,
     "replicates": 20,
     "geometry_parameters": {
-      "clustered": {"clusters": 4, "spread": 0.8},
-      "corridor": {"corridor_width": 3.0},
-      "cluster_bridge": {"clusters": 3, "spread": 0.45, "bridge_fraction": 0.2, "bridge_width": 0.6},
-      "perturbed_grid": {"jitter": 0.15}
+      "clustered": {
+        "clusters": 4,
+        "spread": 0.8
+      },
+      "corridor": {
+        "corridor_width": 3.0
+      },
+      "cluster_bridge": {
+        "clusters": 3,
+        "spread": 0.45,
+        "bridge_fraction": 0.2,
+        "bridge_width": 0.6
+      },
+      "perturbed_grid": {
+        "jitter": 0.15
+      }
     }
   },
-  "connectivity_rule": {"mode": "resample_until_connected", "max_attempts": 80},
-  "timing": {"repetitions": 5, "warmups": 1, "instrumentation": "none", "process_mode": "shared",
-             "validate": "all", "timeout_seconds": 3600},
+  "connectivity_rule": {
+    "mode": "resample_until_connected",
+    "max_attempts": 80
+  },
+  "timing": {
+    "repetitions": 5,
+    "warmups": 1,
+    "instrumentation": "none",
+    "process_mode": "shared",
+    "validate": "all",
+    "timeout_seconds": 3600
+  },
   "memory_probe": true,
   "counter_pass": "basic",
-  "exact": {"max_n": 0}
+  "exact": {
+    "max_n": 0,
+    "timeout_seconds": 600
+  }
 }

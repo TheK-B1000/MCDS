@@ -186,8 +186,8 @@ CLI, and the project notes `docs/{marathe,wan,funke,li}.md`.
 
 | | Before | After |
 | --- | --- | --- |
-| C++ suites | 10/10 | 11/11 (+ `test_bench_support`) |
-| Python tests | 59 pass, 1 skip | see the latest run in the hand-over message |
+| C++ suites | 10/10 | 11/11 (+ `test_bench_support`; see §10 for current) |
+| Python tests | 59 pass, 1 skip | 72 pass, 1 skip (before CGAL; see §10 for current) |
 | Algorithm outputs vs old tag | 540/540 identical | Marathe, Funke, Li identical; Wan differs only by pruned vertices (always a subset, always valid) |
 
 Findings that matter for the science:
@@ -205,3 +205,72 @@ Remaining limitations: Li bound not claimed for v1 (Lemma 2 proof sketch unrevie
 counters; exact OPT capped at n = 20; heap probe excludes stack and non-`new`
 allocations; position balance exact only when replicates are a multiple of 4;
 single-machine design.
+
+## 10. CGAL primary spatial backend (2026-10-05)
+
+Context: the professor asked for CGAL. Decision: CGAL is the primary backend of
+the final study; `GridSpatialIndex` stays as an independent secondary backend;
+brute force stays as the test oracle. No algorithm file was changed.
+
+**Repository events recorded for provenance.** (1) A branch created for the
+earlier methodology commit was removed and `main` was found at the parent
+commit; `main` was fast-forwarded to `c93fcd3` (no history rewritten). (2) The
+tag `v1.0-final-experiment` (on the pre-CGAL commit `c93fcd3`) was deleted
+locally on request because it no longer described the methodology; it had
+never been pushed. No final tag exists. `METHODOLOGY_VERSION = "v1-dev"`.
+
+**Dependency.** CGAL 6.1.2 + Boost 1.88 headers from conda-forge in a
+dedicated env (`mcds-cgal`); the solver stays on the same toolchain as before
+(MSVC 19.44.35222.0, VS 2022 generator, Release `/O2 /Ob2 /DNDEBUG`, C++17).
+CGAL 6.2.1 was not solvable with the installed conda 24.7 (`__win` virtual
+package reported as 0); upgrading base conda was avoided. Versions are compiled
+into `mcds_bench` and recorded in `environment.json` and every manifest.
+
+**Implementation.** `cpp/include/CgalSpatialIndex.hpp`,
+`cpp/src/CgalSpatialIndex.cpp`: `CGAL::Kd_tree` over point indices
+(`Search_traits_adapter` + `Pointer_property_map` on
+`Search_traits_2<Simple_cartesian<double>>`), eager `build()`, queries with
+`Fuzzy_iso_box` (ε = 0) of half-side `r(1+1e-9) + 8ε(|x|+|y|+r)`, then the
+project's exact predicate `distanceSquared <= r²`. The widening adds only
+candidates, never edges (argument in `experimental_methodology.md` §3). API
+calls were checked against the installed headers (`Kd_tree.h`,
+`Fuzzy_iso_box.h`, `Search_traits_adapter.h`, `property_map.h`).
+
+**No silent fallback (each tested).** Configure without CGAL → CMake
+FATAL_ERROR with install instructions. Grid-only build (`-DMCDS_WITH_CGAL=OFF`)
+asked for `cgal` → exit 2, no output. Runner: refuses a study requesting cgal
+on a solver without CGAL; rejects bench output reporting another backend;
+`final: true` configs must use `cgal` only.
+
+**Differential validation.** `test_spatial_backends`: 1,821 point sets,
+258,886 neighbour queries (five geometries; n 1–600; densities 0.5–40; radii
+0.5–3; offsets to ±1e7 and UTM scale; non-identity ids; exact-boundary,
+one-ulp-outside, coincident (also r = 0), single/empty sets): CGAL = grid =
+brute force, 0 discrepancies. All four algorithms on 839 connected graphs:
+identical selected sets, roles, validity and query counts through CGAL and
+grid. Shuffled neighbour order: identical outputs (no order dependence).
+In production every graph is cross-checked (CGAL vs grid, all n neighbour
+sets) before it is run; a mismatch blocks the graph (fairness V8). One test
+defect was found and fixed during development (the test built a grid with
+cell size 0 for the r = 0 case; not a backend discrepancy).
+
+**Other changes in this pass.** Spatial backend as the single configuration
+mechanism (`spatial_backend`, string or list; per-row provenance);
+backend-specific counters renamed (`grid_*`, `cgal_*`, never cross-filled);
+CDS diameter (after the timer, independent grid); separate connectivity
+timing; exact OPT moved into its own process with its own timeout (failures
+recorded, heuristic rows kept); per-metric paired statistics,
+`backend_paired.csv`, `precision.csv`, `precision_curve.csv`; Pareto views;
+representation ablation (`explicit` CSR backend, Marathe only); configs
+`precision_pilot`, `spatial_backend`, `representation_ablation`; fairness
+V7–V9; schema `mcds-results-2`; bench schema `mcds-bench/2`.
+
+**Funke.** The private connectivity check was already removed from the timed
+`solve()` in the previous pass (identity verified on 174 graphs); it is not
+reintroduced.
+
+**Execution order.** Already balanced (seeded Williams design) and recorded
+per row (`execution_order`, `execution_position`, `schedule_row`).
+
+**Tests after this pass.** C++ 12/12 suites (+ `test_spatial_backends`);
+Python 82 passed, 1 optional skip. Study results: see the hand-over report.

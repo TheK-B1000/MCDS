@@ -77,6 +77,41 @@ mcds_add_test(test_wan_level_mis)
 mcds_add_test(test_exact_small)
 
 # ---------------------------------------------------------------------------
+# CGAL spatial backend (primary backend of the final study).
+#
+# Required by default. Point CMake at an install, e.g. the conda-forge env:
+#   cmake -S cpp -B cpp/build-msvc -DCMAKE_PREFIX_PATH=<conda>/envs/mcds-cgal/Library
+# A grid-only build is possible only by asking for it explicitly with
+# -DMCDS_WITH_CGAL=OFF; such a binary refuses `--spatial-backend cgal` at run
+# time instead of substituting another backend.
+# ---------------------------------------------------------------------------
+option(MCDS_WITH_CGAL "Build the CGAL spatial backend (required for the final study)" ON)
+set(MCDS_CGAL_MIN_VERSION 6.0)
+if(MCDS_WITH_CGAL)
+    find_package(CGAL ${MCDS_CGAL_MIN_VERSION} CONFIG QUIET)
+    if(NOT CGAL_FOUND)
+        message(FATAL_ERROR
+            "CGAL >= ${MCDS_CGAL_MIN_VERSION} not found, but MCDS_WITH_CGAL=ON (CGAL is the primary "
+            "spatial backend of the final study).
+"
+            "Install it, e.g.:  conda create -n mcds-cgal -c conda-forge cgal-cpp=6.1.2 libboost-headers=1.88
+"
+            "then configure with -DCMAKE_PREFIX_PATH=<conda>/envs/mcds-cgal/Library.
+"
+            "Only for grid-only development builds: -DMCDS_WITH_CGAL=OFF.")
+    endif()
+    message(STATUS "MCDS: CGAL ${CGAL_VERSION} found (${CGAL_DIR})")
+    add_library(mcds_cgal STATIC src/CgalSpatialIndex.cpp)
+    target_include_directories(mcds_cgal PUBLIC include)
+    target_link_libraries(mcds_cgal PUBLIC mcds_core CGAL::CGAL)
+    if(MSVC)
+        target_compile_options(mcds_cgal PRIVATE /W4 /permissive- /bigobj)
+    else()
+        target_compile_options(mcds_cgal PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+endif()
+
+# ---------------------------------------------------------------------------
 # Experiment measurement harness used by python/run_study.py. The `mcds` CLI
 # above remains the interactive / GUI driver.
 #
@@ -100,6 +135,12 @@ target_link_libraries(mcds_bench_support PUBLIC mcds_core)
 target_include_directories(mcds_bench_support PUBLIC include ${CMAKE_CURRENT_BINARY_DIR}/generated)
 if(WIN32)
     target_link_libraries(mcds_bench_support PUBLIC psapi)
+endif()
+if(MCDS_WITH_CGAL)
+    target_link_libraries(mcds_bench_support PUBLIC mcds_cgal)
+    target_compile_definitions(mcds_bench_support PUBLIC MCDS_WITH_CGAL=1)
+else()
+    target_compile_definitions(mcds_bench_support PUBLIC MCDS_WITH_CGAL=0)
 endif()
 
 function(mcds_add_bench target heap_tracking)
@@ -134,3 +175,17 @@ else()
     target_compile_options(test_bench_support PRIVATE -Wall -Wextra -Wpedantic)
 endif()
 add_test(NAME test_bench_support COMMAND test_bench_support)
+
+# Differential spatial-backend tests: CGAL vs grid vs brute force, and every
+# algorithm through each backend (CGAL builds only).
+if(MCDS_WITH_CGAL)
+    add_executable(test_spatial_backends tests/test_spatial_backends.cpp)
+    target_link_libraries(test_spatial_backends PRIVATE mcds_bench_support)
+    target_include_directories(test_spatial_backends PRIVATE tests)
+    if(MSVC)
+        target_compile_options(test_spatial_backends PRIVATE /W4 /permissive- /bigobj)
+    else()
+        target_compile_options(test_spatial_backends PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME test_spatial_backends COMMAND test_spatial_backends)
+endif()

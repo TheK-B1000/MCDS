@@ -1,14 +1,14 @@
 {
-  "study_id": "smoke",
-  "study_seed": 20261005,
-  "description": "End-to-end smoke test of the experiment pipeline. Not a scientific study.",
+  "study_id": "representation_ablation",
+  "study_seed": 20261012,
+  "description": "OPTIONAL isolated ablation: implicit (CGAL range queries) vs explicit (UDG materialised once as CSR adjacency from the same CGAL queries) representation, one algorithm (Marathe, chosen because its work is a plain BFS + level MIS with no algorithm-specific data structures). Same points, same graph (cross-checked). Not part of the primary comparison.",
   "algorithms": [
-    "marathe",
-    "wan",
-    "funke",
-    "li"
+    "marathe"
   ],
-  "spatial_backend": "cgal",
+  "spatial_backend": [
+    "cgal",
+    "explicit"
+  ],
   "synthetic": {
     "geometries": [
       "uniform",
@@ -18,13 +18,16 @@
       "cluster_bridge"
     ],
     "sizes": [
-      200
+      1000,
+      10000,
+      50000
     ],
     "densities": [
-      8.0
+      8.0,
+      20.0
     ],
     "radius": 1.0,
-    "replicates": 2,
+    "replicates": 4,
     "geometry_parameters": {
       "clustered": {
         "clusters": 4,
@@ -46,7 +49,7 @@
   },
   "connectivity_rule": {
     "mode": "resample_until_connected",
-    "max_attempts": 50
+    "max_attempts": 80
   },
   "timing": {
     "repetitions": 3,
@@ -54,11 +57,12 @@
     "instrumentation": "none",
     "process_mode": "shared",
     "validate": "all",
-    "timeout_seconds": 600
+    "timeout_seconds": 3600
   },
   "memory_probe": true,
-  "counter_pass": "basic",
+  "counter_pass": null,
   "exact": {
-    "max_n": 0
+    "max_n": 0,
+    "timeout_seconds": 600
   }
 }

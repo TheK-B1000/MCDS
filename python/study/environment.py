@@ -209,7 +209,13 @@ def snapshot(repo_root: Path, solvers: dict[str, Path], build_info: dict[str, An
         "python_packages": package_versions(),
         "solver_build": build_info,
         "solvers": {name: {"path": str(p), "sha256": sha256_file(p)} for name, p in solvers.items()},
-        "cgal": "not used (no CGAL dependency in cpp/CMakeLists.txt; uniform-grid SpatialIndex only)",
+        "cgal": {
+            "available": (build_info or {}).get("cgal_available"),
+            "version": (build_info or {}).get("cgal_version"),
+            "boost_version": (build_info or {}).get("boost_version"),
+            "data_structure": "CGAL::Kd_tree + CGAL::Fuzzy_iso_box (dD Spatial Searching), "
+                              "exact predicate distanceSquared <= r^2 applied to the box candidates",
+        },
         "git": git_snapshot(repo_root),
         "sources": source_hashes(repo_root),
     }

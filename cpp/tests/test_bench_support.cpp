@@ -111,7 +111,7 @@ MCDS_TEST(instrumented_index_is_transparent_and_counts_match) {
     const PointSet pts = randomPoints(500, 9.0, 11);
     const GridSpatialIndex raw(pts, 1.0);
     const GridSpatialIndex inner(pts, 1.0);
-    bench::InstrumentedSpatialIndex inst(inner, true);
+    bench::InstrumentedSpatialIndex inst(inner, true, &inner);
 
     std::vector<int> a;
     std::vector<int> b;

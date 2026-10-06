@@ -18,6 +18,7 @@ from typing import Any
 
 from . import bench as bench_mod
 from .fingerprint import file_points_fingerprint, graph_id_for, sha256_file
+from .config import backends as config_backends
 from .seeds import graph_seed
 
 _PYTHON_DIR = Path(__file__).resolve().parent.parent
@@ -91,10 +92,15 @@ def target_expected_degree(density: float | None, radius: float) -> float | None
     return None if density is None else density * math.pi * radius * radius
 
 
-def _graph_probe(binary: Path, csv_path: Path, radius: float) -> dict[str, Any]:
-    out = bench_mod.run_bench(binary, csv_path, radius, graph_only=True, timeout_s=3600)
+def _graph_probe(binary: Path, csv_path: Path, radius: float, backend: str) -> dict[str, Any]:
+    """Untimed graph check with the study's primary backend. Fails on a CGAL /
+    grid neighbour-set mismatch (the bench cross-checks every graph)."""
+    out = bench_mod.run_bench(binary, csv_path, radius, spatial_backend=backend, graph_only=True,
+                              timeout_s=3600)
     if not out.ok or out.data is None:
         raise RuntimeError(f"graph probe failed for {csv_path}: {out.error}")
+    if out.data.get("backend_crosscheck", {}).get("status") not in ("identical", "not_applicable"):
+        raise RuntimeError(f"backend cross-check failed for {csv_path}: {out.data.get('backend_crosscheck')}")
     return out.data
 
 
@@ -124,7 +130,7 @@ def prepare(p: PlannedDataset, cfg: dict[str, Any], repo_root: Path, out_dir: Pa
             return record
         sha = sha256_file(csv_path)
         fp = file_points_fingerprint(csv_path)
-        probe = _graph_probe(binary, csv_path, p.radius)
+        probe = _graph_probe(binary, csv_path, p.radius, config_backends(cfg)[0])
         sidecar_path = csv_path.with_name(csv_path.stem + ".meta.json")
         sidecar = json.loads(sidecar_path.read_text(encoding="utf-8-sig")) if sidecar_path.is_file() else {}
         source_sha = sidecar.get("input_sha256")
@@ -162,7 +168,7 @@ def prepare(p: PlannedDataset, cfg: dict[str, Any], repo_root: Path, out_dir: Pa
         write_csv(str(csv_path), gen.points)
         sha = sha256_file(csv_path)
         fp = file_points_fingerprint(csv_path)
-        probe = _graph_probe(binary, csv_path, p.radius)
+        probe = _graph_probe(binary, csv_path, p.radius, config_backends(cfg)[0])
         connected = bool(probe["graph"]["connected"])
         accept = connected or rule["mode"] == "accept_all"
         reason = "" if accept else "disconnected"

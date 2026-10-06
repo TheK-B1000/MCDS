@@ -32,8 +32,9 @@ METRICS_VS = [
     ("cds_size", "CDS size |D|", False),
     ("cds_fraction", "CDS fraction |D| / |V|", False),
     ("neighbor_queries", "Range-neighbour queries (log scale)", True),
-    ("candidates_examined", "Candidate points examined (log scale)", True),
-    ("distance_computations", "Exact distance computations (log scale)", True),
+    ("grid_candidates_examined", "Grid: candidate points in scanned cells (log scale)", True),
+    ("cgal_box_candidates", "CGAL: points reported by the box search (log scale)", True),
+    ("cds_diameter", "CDS diameter (hops)", False),
     ("heap_peak_additional_bytes", "Algorithm heap peak (bytes, log scale)", True),
     ("empirical_ratio", "Empirical ratio |D| / OPT", False),
 ]
@@ -195,46 +196,55 @@ def validity_plot(valid_rows, out, written, plt) -> None:
     plt.close(fig)
 
 
+PARETO_VIEWS = [
+    # (x metric, x label, log x, y metric, y label)   lower is better on both axes
+    ("t_algorithm_ms", "Median T_algorithm (ms, log scale)", True, "cds_size", "Median CDS size"),
+    ("neighbor_queries", "Median range-neighbour queries (log scale)", True, "cds_size", "Median CDS size"),
+    ("t_algorithm_ms", "Median T_algorithm (ms, log scale)", True, "cds_fraction", "Median CDS fraction"),
+    ("t_algorithm_ms", "Median T_algorithm (ms, log scale)", True, "empirical_ratio",
+     "Median empirical ratio |D| / OPT"),
+]
+
+
 def pareto(gl, out, written, plt) -> None:
-    """Runtime vs CDS fraction per cell (median over graphs); Pareto-optimal algorithms ringed."""
-    cells = sorted({r["cell_id"] for r in gl})
-    for cell in cells:
-        rows = [r for r in gl if r["cell_id"] == cell]
-        pts = {}
-        k = 0
-        for a in _algos(rows):
-            ts = [_f(r["t_algorithm_ms"]) for r in rows if r["algorithm"] == a and _f(r["t_algorithm_ms"])]
-            cs = [_f(r["cds_fraction"]) for r in rows if r["algorithm"] == a and _f(r["cds_fraction"]) is not None]
-            if ts and cs:
-                pts[a] = (statistics.median(ts), statistics.median(cs))
-                k = max(k, len(ts))
-        if len(pts) < 2:
-            continue
-        frontier = {a for a, (t, c) in pts.items()
-                    if not any((t2 <= t and c2 <= c) and (t2 < t or c2 < c) for b, (t2, c2) in pts.items() if b != a)}
-        fig, ax = plt.subplots(figsize=(4.2, 3.2))
-        for a, (t, c) in pts.items():
-            ax.scatter([t], [c], color=COLORS[a], marker=MARKERS[a], s=50, label=LABELS[a], zorder=3,
-                       edgecolors="white", linewidths=1.5)
-            if a in frontier:
-                ax.scatter([t], [c], s=170, facecolors="none", edgecolors=INK, linewidths=1, zorder=2)
-        ax.set_xscale("log")
-        ax.set_xlabel("Median T_algorithm (ms, log scale)")
-        ax.set_ylabel("Median CDS fraction")
-        ax.legend(fontsize=8)
-        ax.set_title(f"{cell}\nringed = Pareto-optimal; graphs: {k}", color=MUTED, fontsize=8)
-        safe = "".join(ch if ch.isalnum() else "_" for ch in cell)
-        _save(fig, out / "pareto", f"pareto__{safe}", written)
-        plt.close(fig)
+    """Quality vs cost per cell (median over graphs); Pareto-optimal algorithms
+    (no other algorithm at least as good on both axes and better on one) ringed.
+    Operates only on collected graph-level rows."""
+    for xm, xl, logx, ym, yl in PARETO_VIEWS:
+        for cell in sorted({r["cell_id"] for r in gl}):
+            rows = [r for r in gl if r["cell_id"] == cell]
+            pts = {}
+            k = 0
+            for a in _algos(rows):
+                xs = [_f(r[xm]) for r in rows if r["algorithm"] == a and _f(r.get(xm)) is not None]
+                ys = [_f(r[ym]) for r in rows if r["algorithm"] == a and _f(r.get(ym)) is not None]
+                if xs and ys:
+                    pts[a] = (statistics.median(xs), statistics.median(ys))
+                    k = max(k, min(len(xs), len(ys)))
+            if len(pts) < 2:
+                continue
+            frontier = {a for a, (x, y) in pts.items()
+                        if not any((x2 <= x and y2 <= y) and (x2 < x or y2 < y)
+                                   for b, (x2, y2) in pts.items() if b != a)}
+            fig, ax = plt.subplots(figsize=(4.2, 3.2))
+            for a, (x, y) in pts.items():
+                ax.scatter([x], [y], color=COLORS[a], marker=MARKERS[a], s=50, label=LABELS[a], zorder=3,
+                           edgecolors="white", linewidths=1.5)
+                if a in frontier:
+                    ax.scatter([x], [y], s=170, facecolors="none", edgecolors=INK, linewidths=1, zorder=2)
+            if logx:
+                ax.set_xscale("log")
+            ax.set_xlabel(xl)
+            ax.set_ylabel(yl)
+            ax.legend(fontsize=8)
+            ax.set_title(f"{cell} | ringed = Pareto-optimal; graphs: {k}", color=MUTED, fontsize=8)
+            safe = "".join(ch if ch.isalnum() else "_" for ch in cell)
+            _save(fig, out / "pareto", f"pareto__{ym}_vs_{xm}__{safe}", written)
+            plt.close(fig)
 
 
-def make_all(study_dir: Path) -> list[str]:
-    plt = _plt()
-    gl = read_csv(study_dir / "graph_level.csv")
-    out = study_dir / "figures"
+def _make_for_backend(gl, valid_rows, out, plt) -> list[str]:
     written: list[str] = []
-    if not gl:
-        return written
     for metric, label, logy in METRICS_VS:
         if any(_f(r.get(metric)) is not None for r in gl):
             line_by_factor(gl, metric, label, logy, "n", "n (log scale)", "density_target", out, written, plt)
@@ -248,14 +258,28 @@ def make_all(study_dir: Path) -> list[str]:
             logx=False, logy=False)
     scatter(gl, "neighbor_queries", "Range-neighbour queries (log)", "t_algorithm_ms", "T_algorithm (ms, log)",
             out, written, plt)
-    scatter(gl, "distance_computations", "Distance computations (log)", "t_algorithm_ms",
-            "T_algorithm (ms, log)", out, written, plt)
     scatter(gl, "t_algorithm_ms", "T_algorithm (ms, log)", "cds_fraction", "CDS fraction", out, written, plt,
             logx=True, logy=False)
-    vpath = study_dir / "validity.csv"
-    if vpath.is_file() and vpath.stat().st_size:
-        validity_plot(read_csv(vpath), out, written, plt)
+    if valid_rows:
+        validity_plot(valid_rows, out, written, plt)
     pareto(gl, out, written, plt)
+    return written
+
+
+def make_all(study_dir: Path) -> list[str]:
+    """Figures per spatial backend (figures/<backend>/): a primary study has one
+    backend; a sensitivity study never mixes backends inside one figure."""
+    plt = _plt()
+    gl = read_csv(study_dir / "graph_level.csv")
+    if not gl:
+        return []
+    vpath = study_dir / "validity.csv"
+    valid = read_csv(vpath) if vpath.is_file() and vpath.stat().st_size else []
+    written: list[str] = []
+    for backend in sorted({r["spatial_backend"] for r in gl}):
+        rows = [r for r in gl if r["spatial_backend"] == backend]
+        vrows = [v for v in valid if v.get("spatial_backend") == backend]
+        written += _make_for_backend(rows, vrows, study_dir / "figures" / backend, plt)
     return written
 
 

@@ -46,6 +46,8 @@ def main() -> int:
     parser.add_argument("--n", type=int, default=2000)
     parser.add_argument("--densities", default="3,3.5,4,4.5,5")
     parser.add_argument("--seeds", type=int, default=20, help="Number of independent seeds (1..N)")
+    parser.add_argument("--spatial-backend", default="cgal", choices=["cgal", "grid"],
+                        help="spatial backend for the connectivity probe (default: cgal, the study backend)")
     parser.add_argument("--radius", type=float, default=1.0)
     parser.add_argument(
         "--out-dir",
@@ -81,7 +83,8 @@ def main() -> int:
                     gen = generate(dist, n, seed, density=density, **extra)
                     points_path = tmp_dir / f"{dist}_d{density}_s{seed}.csv"
                     write_csv(str(points_path), gen.points)
-                    probe = run_bench(exe, points_path, args.radius, graph_only=True, timeout_s=600)
+                    probe = run_bench(exe, points_path, args.radius, spatial_backend=args.spatial_backend, graph_only=True,
+                                      timeout_s=600)
                     graph = probe.data["graph"] if probe.ok and probe.data else None
                     connected = bool(graph and graph["connected"])
                     error = probe.error

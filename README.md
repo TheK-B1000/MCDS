@@ -71,7 +71,7 @@ MCDS algorithm
 SpatialIndex          <-- the only adjacency API that exists
       |
       v
-uniform grid  (today)  /  CGAL range search  (a possible second backend)
+CGAL kd-tree (primary)  /  uniform grid (independent secondary)
 ```
 
 An algorithm asks for `index.radiusQuery(pointId, 1.0)` and receives the ids of
@@ -154,40 +154,47 @@ path of the test targets only. Production code physically cannot include it.
 
 ## Building
 
-Requires a C++17 compiler and CMake 3.16+. **No third-party library is needed.**
-
-```bash
-cmake -S cpp -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --parallel
-```
-
-Verified with GCC 15.2 and MSVC 19.44 at `-Wall -Wextra -Wpedantic` / `/W4`.
-(MSVC currently reports C4244 conversion warnings from standard-library
-instantiations in `mcds_core`.)
-
-Targets: `mcds` (interactive CLI used by the GUI), `mcds_bench` (experiment
-measurement driver), `mcds_bench_mem` (memory probes), and the test suites.
-
-On Windows without CMake on `PATH`, the copy bundled with Visual Studio Build
-Tools works:
+Requires a C++17 compiler, CMake 3.16+ and **CGAL ≥ 6.0** (header-only, with
+Boost headers). CGAL is the primary spatial backend of the final study, so a
+default configure **fails** if CGAL is not found. Verified setup (Windows,
+MSVC 19.44, Visual Studio 2022 generator):
 
 ```powershell
+conda create -n mcds-cgal -c conda-forge cgal-cpp=6.1.2 libboost-headers=1.88
 $cmake = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"
-& $cmake -S cpp -B build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Release
-& $cmake --build build --parallel
+& $cmake -S cpp -B cpp/build-msvc -DCMAKE_PREFIX_PATH="$env:USERPROFILE/miniconda3/envs/mcds-cgal/Library"
+& $cmake --build cpp/build-msvc --config Release --parallel
 ```
 
-### On CGAL
+(conda 24.7 on this machine could not solve CGAL 6.2.x because of a `__win`
+virtual-package check; 6.1.2 with Boost 1.88 solves cleanly.)
 
-The project brief suggests CGAL for spatial searching. **CGAL is not used yet,
-and is not currently a dependency**, for two reasons: it is not installed in
-this development environment (nor is Boost, which it needs), and a uniform grid
-is both simpler to explain and asymptotically appropriate for fixed-radius
-queries on bounded-density point sets. Because algorithms only ever see the
-`SpatialIndex` interface, a `CgalSpatialIndex` can be added later as a second
-backend and compared against the grid on identical datasets without touching a
-line of algorithm code — which makes backend choice an experimental variable
-rather than an architectural commitment.
+A grid-only development build is possible only on explicit request:
+`-DMCDS_WITH_CGAL=OFF`. Such a binary refuses `--spatial-backend cgal` — there
+is never a silent fallback.
+
+Compiled at `-Wall -Wextra -Wpedantic` / `/W4`; MSVC reports C4244
+conversion warnings from standard-library instantiations in `mcds_core`.
+
+Targets: `mcds` (interactive CLI used by the GUI), `mcds_bench` (experiment
+measurement driver), `mcds_bench_mem` (memory probes), and the test suites
+(including `test_spatial_backends`, the CGAL / grid / brute-force
+differential suite).
+
+### Spatial backends
+
+All algorithms see only the `SpatialIndex` interface.
+
+* **CGAL (primary):** `CGAL::Kd_tree` + `CGAL::Fuzzy_iso_box` (dD Spatial
+  Searching) retrieve candidates; adjacency is decided by the same exact
+  predicate `distanceSquared(p, q) <= r²` as every other backend.
+* **Uniform grid (secondary):** independent implementation; reference for
+  validation, CDS diameter and a full per-graph neighbour cross-check.
+* **Brute force:** correctness oracle in tests.
+
+CGAL = grid = brute force on 258,886 differential neighbour queries, and all
+four algorithms return identical CDSs through CGAL and the grid. Details:
+[docs/experimental_methodology.md](docs/experimental_methodology.md) §3.
 
 ---
 
@@ -294,8 +301,11 @@ execution), `datasets.csv`, `generation_attempts.csv`, `failures.csv`,
 `summary.csv`, `paired.csv`, `validity.csv`, `figures/`,
 `environment.json`, `methodology_manifest.json`.
 
-Configs in `experiments/`: `smoke`, `pilot`, `exact_small` (|D|/OPT for
-n ≤ 16), `real_world_scaling` (template), `final` (draft; see the protocol).
+Configs in `experiments/`: `smoke`, `pilot`, `precision_pilot` (replicate
+count), `exact_small` (|D|/OPT for n ≤ 16), `spatial_backend` (optional
+CGAL-vs-grid sensitivity), `representation_ablation` (optional implicit vs
+explicit adjacency), `real_world_scaling` (template), `final` (primary study;
+CGAL only; not yet locked). Every config states its `spatial_backend`.
 
 ### Real-world / external datasets
 
@@ -370,7 +380,8 @@ py -3 -m unittest discover -s python/tests -v
 
 Permanent demo dataset: `datasets/demo/cluster_bridge_300.csv`.
 
-Recommended sequence: smoke → pilot → exact_small → (real data) → final.
+Recommended sequence: smoke → precision_pilot → exact_small → (optional
+studies, real data) → lock protocol → final.
 Do not launch `final` until the protocol in
 [docs/final_experiment_protocol.md](docs/final_experiment_protocol.md) is
 approved; `final: true` refuses a dirty git tree or a non-Release build.
@@ -441,9 +452,12 @@ Done and tested through visualization, GUI, and the smoke experiment pipeline:
 - [x] Graph statistics, spatial-work counters, per-algorithm heap probes
 - [x] Statistical summaries (bootstrap / Wilson CIs, paired comparisons) and figures
 - [x] Primary-paper audits for all four algorithms; Wan §VI.A pruning implemented
+- [x] CGAL primary spatial backend with differential validation against grid and brute force
+- [x] CDS diameter, exact-OPT in its own process, precision-pilot analysis, representation ablation
 - [x] Real-world dataset import (CSV / GeoJSON / lat-lon projection) and external study mode
 
 Remaining:
 
-- [ ] Resolve open protocol decisions; lock the v1 methodology (tag + manifest)
+- [ ] Choose the replicate count from the precision pilot; review final cells;
+      lock the v1 methodology (tag + manifest)
 - [ ] Collect final data (pilot → exact_small → final; optional real-world study)

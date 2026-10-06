@@ -2,24 +2,67 @@
   "study_id": "pilot",
   "study_seed": 20261006,
   "description": "Pilot: checks feasibility, connectivity acceptance rates and run time before the v1 final protocol is locked. Pilot outcomes may inform the protocol; final outcomes may not.",
-  "algorithms": ["marathe", "wan", "funke", "li"],
+  "algorithms": [
+    "marathe",
+    "wan",
+    "funke",
+    "li"
+  ],
+  "spatial_backend": "cgal",
   "synthetic": {
-    "geometries": ["uniform", "clustered", "perturbed_grid", "corridor", "cluster_bridge"],
-    "sizes": [250, 1000, 2000],
-    "densities": [5.0, 8.0, 12.0],
+    "geometries": [
+      "uniform",
+      "clustered",
+      "perturbed_grid",
+      "corridor",
+      "cluster_bridge"
+    ],
+    "sizes": [
+      250,
+      1000,
+      2000
+    ],
+    "densities": [
+      5.0,
+      8.0,
+      12.0
+    ],
     "radius": 1.0,
     "replicates": 8,
     "geometry_parameters": {
-      "clustered": {"clusters": 4, "spread": 0.8},
-      "corridor": {"corridor_width": 3.0},
-      "cluster_bridge": {"clusters": 3, "spread": 0.45, "bridge_fraction": 0.2, "bridge_width": 0.6},
-      "perturbed_grid": {"jitter": 0.15}
+      "clustered": {
+        "clusters": 4,
+        "spread": 0.8
+      },
+      "corridor": {
+        "corridor_width": 3.0
+      },
+      "cluster_bridge": {
+        "clusters": 3,
+        "spread": 0.45,
+        "bridge_fraction": 0.2,
+        "bridge_width": 0.6
+      },
+      "perturbed_grid": {
+        "jitter": 0.15
+      }
     }
   },
-  "connectivity_rule": {"mode": "resample_until_connected", "max_attempts": 80},
-  "timing": {"repetitions": 5, "warmups": 1, "instrumentation": "none", "process_mode": "shared",
-             "validate": "all", "timeout_seconds": 1800},
+  "connectivity_rule": {
+    "mode": "resample_until_connected",
+    "max_attempts": 80
+  },
+  "timing": {
+    "repetitions": 5,
+    "warmups": 1,
+    "instrumentation": "none",
+    "process_mode": "shared",
+    "validate": "all",
+    "timeout_seconds": 1800
+  },
   "memory_probe": true,
   "counter_pass": "basic",
-  "exact": {"max_n": 0}
+  "exact": {
+    "max_n": 0
+  }
 }
