@@ -1,0 +1,12 @@
+# Files whose exact bytes are recorded as SHA-256 provenance evidence (calibration
+# records, precision-pilot evidence, the replicate rule and decision tool, the
+# equivalence test, pilot configs). They are stored and checked out byte for byte,
+# with no end-of-line conversion, so the recorded hashes hold on every clone and OS
+# (the repository otherwise uses core.autocrlf=true on Windows).
+experiments/calibration/** -text
+experiments/precision/** -text
+experiments/precision_pilot.json -text
+experiments/precision_pilot_rerun.json -text
+experiments/precision_pilot_rerun2.json -text
+python/replicate_decision.py -text
+cpp/tests/test_search_equivalence.cpp -text
