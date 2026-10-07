@@ -345,7 +345,6 @@ T_algorithm.
 | `precision_pilot.json` | How many replicates are needed? |
 | `exact_small.json` | How close to OPT on small UDGs? |
 | `spatial_backend.json` | Does backend choice (CGAL vs grid) affect performance? (`backend_paired.csv`) |
-| `representation_ablation.json` | What does the implicit representation save? **Count-only, no graph is built**: measured implicit memory (`final_representation_bytes`, `index_build_peak_bytes`, `pipeline_peak_bytes`) vs the analytical size of an explicit CSR / bit-matrix (`explicit_*_bytes_estimate`) for growing n and density (Marathe only; scales to n = 50,000) |
 | `real_world_scaling.json` | Real spatial data (template paths) |
 | `smoke.json`, `pilot.json` | Pipeline checks |
 

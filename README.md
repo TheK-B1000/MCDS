@@ -312,8 +312,7 @@ execution), `datasets.csv`, `generation_attempts.csv`, `failures.csv`,
 
 Configs in `experiments/`: `smoke`, `pilot`, `precision_pilot` (replicate
 count), `exact_small` (|D|/OPT for n ≤ 16), `spatial_backend` (optional
-CGAL-vs-grid sensitivity), `representation_ablation` (optional implicit memory vs
-count-only explicit-size estimate; no graph is built), `real_world_scaling` (template), `final` (primary study;
+CGAL-vs-grid sensitivity), `real_world_scaling` (template), `final` (primary study;
 CGAL only; reopened after the pre-final audit, replicate count pending the precision-pilot re-run; final tag `v1.0-final-experiment` once locked). Every config states its `spatial_backend`.
 
 ### Real-world / external datasets
@@ -462,7 +461,7 @@ Done and tested through visualization, GUI, and the smoke experiment pipeline:
 - [x] Statistical summaries (bootstrap / Wilson CIs, paired comparisons) and figures
 - [x] Primary-paper audits for all four algorithms; Wan §VI.A pruning implemented
 - [x] CGAL primary spatial backend with differential validation against grid and brute force
-- [x] CDS diameter, exact-OPT in its own process, precision-pilot analysis, representation ablation
+- [x] CDS diameter, exact-OPT in its own process, precision-pilot analysis
 - [x] Real-world dataset import (CSV / GeoJSON / lat-lon projection) and external study mode
 
 Remaining:

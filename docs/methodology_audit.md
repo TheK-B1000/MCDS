@@ -261,10 +261,8 @@ CDS diameter (after the timer, independent grid); separate connectivity
 timing; exact OPT moved into its own process with its own timeout (failures
 recorded, heuristic rows kept); per-metric paired statistics,
 `backend_paired.csv`, `precision.csv`, `precision_curve.csv`; Pareto views;
-representation ablation (originally an `explicit` CSR backend; removed in
-§11 and replaced by a count-only estimate); configs
-`precision_pilot`, `spatial_backend`, `representation_ablation`; fairness
-V7–V9; schema `mcds-results-2`; bench schema `mcds-bench/2`.
+configs `precision_pilot`, `spatial_backend`; fairness V7–V9; schema
+`mcds-results-2`; bench schema `mcds-bench/2`.
 
 **Funke.** The private connectivity check was already removed from the timed
 `solve()` in the previous pass (identity verified on 174 graphs); it is not
@@ -287,7 +285,7 @@ five places that stored edges; all are fixed, and a guard now enforces it.
 | Real-data largest-component filter (`real_dataset.py`) | full Python adjacency list of the dataset | union-find over the grid scan, O(n); same tie-breaking (largest, then smallest member index) |
 | Exact OPT (`ExactSmallMCDS.cpp`, n ≤ 20) | adjacency lists | per-subset radius queries through an implicit `GridSpatialIndex`; signature and tests unchanged |
 | CDS diameter (`BenchSupport.cpp`) | CDS-induced subgraph lists | BFS from every CDS vertex with on-demand radius queries filtered to D; O(n) bitmap + distances |
-| Representation ablation | `ExplicitAdjacencyIndex` (whole UDG as CSR) | removed; `explicit` backend removed from bench, config and tests; replaced by `explicit_csr_bytes_estimate` / `explicit_bitmatrix_bytes_estimate` (count-only) |
+| Explicit CSR backend | `ExplicitAdjacencyIndex` (whole UDG as CSR) | removed; `explicit` backend removed from bench, config and tests; replaced by `explicit_csr_bytes_estimate` / `explicit_bitmatrix_bytes_estimate` (count-only analytical size) |
 | Visualisation `--show-cds-edges` | segments between adjacent CDS points (`cds_edges`) | removed (CLI flags, `--edge-k-limit`, GUI toggle, legend entry and helper); the plot draws points only; a test asserts the API and flags are gone and no line is drawn; tripwire extended to visualisation/GUI |
 
 Already implicit (verified): all four algorithms (Marathe's per-level vertex

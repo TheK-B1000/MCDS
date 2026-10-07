@@ -145,8 +145,7 @@ def graph_level(raw: list[dict[str, str]], datasets: list[dict[str, str]]) -> li
             "t_algorithm_ms_min": min(times) if times else None,
             "t_algorithm_ms_max": max(times) if times else None,
             "t_spatial_index_ms": _f(first.get("t_spatial_index_ms")),
-            # Representation ablation: build cost of the adjacency representation
-            # (CGAL index, or CGAL index + materialised CSR) plus T_algorithm.
+            # Index build + algorithm (same process; not a primary comparison metric).
             "t_index_plus_algorithm_ms": ((_f(first.get("t_spatial_index_ms")) or 0.0) + statistics.median(times))
             if times and _f(first.get("t_spatial_index_ms")) is not None else None,
             "index_bytes": _f(first.get("index_bytes")),

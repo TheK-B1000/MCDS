@@ -198,7 +198,7 @@ class DumbbellFeasibilityTests(unittest.TestCase):
 
     def test_every_primary_and_pilot_cell_is_feasible(self):
         from study.datasets import generation_feasibility
-        for name in ("final", "precision_pilot", "pilot", "smoke", "spatial_backend", "representation_ablation"):
+        for name in ("final", "precision_pilot", "pilot", "smoke", "spatial_backend"):
             cfg = config_mod.load(REPO_ROOT / "experiments" / f"{name}.json")
             syn = cfg["synthetic"]
             for n in syn["sizes"]:
@@ -212,7 +212,7 @@ class FrozenConfigTests(unittest.TestCase):
 
     def test_configs_use_d3_v2_and_dumbbell(self):
         for name in ("final", "precision_pilot", "pilot", "smoke", "spatial_backend",
-                     "representation_ablation", "exact_small", "sparse_density5"):
+                     "exact_small", "sparse_density5"):
             cfg = config_mod.load(REPO_ROOT / "experiments" / f"{name}.json")
             syn = cfg["synthetic"]
             self.assertNotIn("cluster_bridge", syn["geometries"], name)
