@@ -1,7 +1,7 @@
 {
   "study_id": "sparse_density5",
   "study_seed": 20261201,
-  "description": "Optional SEPARATE sparse study at density 5 (never pooled with the primary {8, 12} factorial). Cells are admitted mechanically by the preregistered sparse-admission gate (gates_v1 sparse_admission: >= 18/24 connected in calibration, min_acceptance_rate 0.75), each geometry judged by the calibration of its own generator revision: uniform and dumbbell by generator_calibration_v2 (seed 20261107); clustered (D3-v2, s = 0.05) by the s = 0.05 v2 file; perturbed_grid and corridor (generators unchanged since v1; reproduction check 48/48 identical graphs) by generator_calibration_v1 (seed 20261006). Expected admission: uniform, dumbbell, perturbed_grid at every n; corridor at n <= 2000; clustered at no n. Replicates: 36, following the final study's preregistered precision-pilot selection.",
+  "description": "Optional SEPARATE sparse study at density 5 (never pooled with the primary {8, 12} factorial). Cells are admitted mechanically by the preregistered sparse-admission gate (gates_v1 sparse_admission: >= 18/24 connected in calibration, min_acceptance_rate 0.75), each geometry judged by the calibration of its own generator revision: uniform and dumbbell by generator_calibration_v2 (seed 20261107); clustered (D3-v2, s = 0.05) by the s = 0.05 v2 file; perturbed_grid and corridor (generators unchanged since v1; reproduction check 48/48 identical graphs) by generator_calibration_v1 (seed 20261006). Expected admission: uniform, dumbbell, perturbed_grid at every n; corridor at n <= 2000; clustered at no n. Replicates: 20, following the final study's preregistered precision-pilot selection.",
   "algorithms": [
     "marathe",
     "wan",
@@ -28,7 +28,7 @@
       5.0
     ],
     "radius": 1.0,
-    "replicates": 36,
+    "replicates": 20,
     "geometry_parameters": {
       "clustered": {
         "clusters": 4,

@@ -88,14 +88,43 @@ class PilotRerunConfigTests(unittest.TestCase):
 class LockedSelectionTests(unittest.TestCase):
     """final.json is tied to the pilot's mechanical outcome and its evidence."""
 
-    def test_final_uses_selected_count_and_evidence_is_intact(self):
+    def test_final_uses_the_authoritative_selection_and_evidence_is_intact(self):
         import hashlib
         prec = rd._ROOT / "experiments" / "precision"
-        sel = json.loads((prec / "replicate_selection_v1.json").read_text(encoding="utf-8"))
+        sel = json.loads((prec / "replicate_selection_final.json").read_text(encoding="utf-8"))
         final = json.loads((rd._ROOT / "experiments" / "final.json").read_text(encoding="utf-8"))
         self.assertEqual(sel["status"], "selected")
         self.assertEqual(final["synthetic"]["replicates"], sel["selected_replicates"])
+        self.assertEqual(final["synthetic"]["replicates"], 20)
         self.assertIn(final["synthetic"]["replicates"], RULE["ladder"])
+        h = sel["evidence_sha256"]
+        def sha(p):
+            return hashlib.sha256(p.read_bytes()).hexdigest()
+        self.assertEqual(sha(rd.RULE), h["experiments/precision/replicate_rule_v1.json"])
+        self.assertEqual(sha(rd._ROOT / "python" / "replicate_decision.py"), h["python/replicate_decision.py"])
+        self.assertEqual(sha(rd._ROOT / "experiments" / "precision_pilot_rerun2.json"),
+                         h["experiments/precision_pilot_rerun2.json"])
+        self.assertEqual(sha(prec / "precision_pilot_rerun2_replicate_decision.txt"),
+                         h["results/studies/precision_pilot_rerun2/replicate_decision.txt"])
+        self.assertEqual(sha(prec / "precision_pilot_rerun2_graph_level.csv"),
+                         h["results/studies/precision_pilot_rerun2/graph_level.csv (decision input)"])
+        for log in ("search_equivalence_replay_27c7d26.log", "search_equivalence_replay_d4c96cc.log"):
+            self.assertEqual(sha(prec / log), h[f"experiments/precision/{log}"])
+            self.assertIn("comparisons 6240 identical 6240 different 0", (prec / log).read_text(encoding="utf-8"))
+
+    def test_authoritative_decision_input_reproduces_k20(self):
+        with tempfile.TemporaryDirectory() as d:
+            import shutil
+            shutil.copyfile(rd._ROOT / "experiments" / "precision" / "precision_pilot_rerun2_graph_level.csv",
+                            Path(d) / "graph_level.csv")
+            self.assertEqual(rd.main(["--study", d, "--json", str(Path(d) / "dec.json")]), 0)
+            self.assertEqual(json.loads((Path(d) / "dec.json").read_text(encoding="utf-8"))["chosen_k"], 20)
+
+    def test_historical_selection_record_is_intact(self):
+        import hashlib
+        prec = rd._ROOT / "experiments" / "precision"
+        sel = json.loads((prec / "replicate_selection_v1.json").read_text(encoding="utf-8"))
+        self.assertEqual(sel["selected_replicates"], 36)  # pre-audit code; historical only
         h = sel["evidence_sha256"]
         def sha(p):
             return hashlib.sha256(p.read_bytes()).hexdigest()
@@ -113,7 +142,7 @@ class LockedSelectionTests(unittest.TestCase):
             shutil.copyfile(rd._ROOT / "experiments" / "precision" / "precision_pilot_graph_level.csv",
                             Path(d) / "graph_level.csv")
             self.assertEqual(rd.main(["--study", d, "--json", str(Path(d) / "dec.json")]), 0)
-            self.assertEqual(json.loads((Path(d) / "dec.json").read_text(encoding="utf-8"))["chosen_k"], 36)
+            self.assertEqual(json.loads((Path(d) / "dec.json").read_text(encoding="utf-8"))["chosen_k"], 36)  # historical
 
 
 class DecisionTests(unittest.TestCase):

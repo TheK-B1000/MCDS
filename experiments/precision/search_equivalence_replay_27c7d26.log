@@ -1,0 +1,26 @@
+156/1560 graphs, identical 624, different 0, 228s
+312/1560 graphs, identical 1248, different 0, 376s
+468/1560 graphs, identical 1872, different 0, 556s
+624/1560 graphs, identical 2496, different 0, 757s
+780/1560 graphs, identical 3120, different 0, 951s
+936/1560 graphs, identical 3744, different 0, 1133s
+1092/1560 graphs, identical 4368, different 0, 1312s
+1248/1560 graphs, identical 4992, different 0, 1531s
+1404/1560 graphs, identical 5616, different 0, 1730s
+1560/1560 graphs, identical 6240, different 0, 1953s
+DONE graphs 1560 comparisons 6240 identical 6240 different 0
+median t_algorithm_ms (v1.0 pilot, quiet machine) vs (v1.1 replay, NOT a controlled timing):
+  funke    n=   500 v1.0      5.12  v1.1      0.99
+  funke    n=  2000 v1.0     56.55  v1.1      5.03
+  funke    n= 10000 v1.0    754.17  v1.1     28.72
+  li       n=   500 v1.0     14.19  v1.1      2.46
+  li       n=  2000 v1.0    212.27  v1.1     11.72
+  li       n= 10000 v1.0   5555.99  v1.1     66.16
+  marathe  n=   500 v1.0      1.34  v1.1      1.39
+  marathe  n=  2000 v1.0      6.20  v1.1      6.49
+  marathe  n= 10000 v1.0     34.64  v1.1     34.62
+  wan      n=   500 v1.0      1.37  v1.1      1.42
+  wan      n=  2000 v1.0      6.39  v1.1      6.46
+  wan      n= 10000 v1.0     35.86  v1.1     35.84
+
+[exited with code 0]

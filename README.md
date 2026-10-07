@@ -313,7 +313,7 @@ execution), `datasets.csv`, `generation_attempts.csv`, `failures.csv`,
 Configs in `experiments/`: `smoke`, `pilot`, `precision_pilot` (replicate
 count), `exact_small` (|D|/OPT for n ≤ 16), `spatial_backend` (optional
 CGAL-vs-grid sensitivity), `real_world_scaling` (template), `final` (primary study;
-CGAL only; reopened after the pre-final audit, replicate count pending the precision-pilot re-run; final tag `v1.0-final-experiment` once locked). Every config states its `spatial_backend`.
+CGAL only; locked at 20 replicates, 1,000 graphs, tag `v1.0-final-experiment`). Every config states its `spatial_backend`.
 
 ### Real-world / external datasets
 

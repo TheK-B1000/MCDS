@@ -1,0 +1,55 @@
+geometry        dens   k   CDS ok-share  max pp  med pp  | RT ok-share  max    med    | narrow
+clustered       8.0   20    1.00       0.39   0.10  |   1.00     0.064  0.024  | yes
+clustered       8.0   28    1.00       0.31   0.08  |   1.00     0.046  0.019  | yes
+clustered       8.0   36    1.00       0.26   0.07  |   1.00     0.036  0.018  | yes
+clustered       8.0   44    1.00       0.24   0.06  |   1.00     0.030  0.015  | yes
+clustered       8.0   52    1.00       0.23   0.06  |   1.00     0.029  0.014  | yes
+clustered       12.0  20    1.00       0.34   0.10  |   1.00     0.057  0.031  | yes
+clustered       12.0  28    1.00       0.27   0.07  |   1.00     0.054  0.034  | yes
+clustered       12.0  36    1.00       0.22   0.06  |   1.00     0.044  0.032  | yes
+clustered       12.0  44    1.00       0.18   0.06  |   1.00     0.038  0.027  | yes
+clustered       12.0  52    1.00       0.16   0.05  |   1.00     0.034  0.024  | yes
+corridor        8.0   20    1.00       0.46   0.14  |   1.00     0.031  0.017  | yes
+corridor        8.0   28    1.00       0.35   0.11  |   1.00     0.022  0.013  | yes
+corridor        8.0   36    1.00       0.29   0.09  |   1.00     0.022  0.011  | yes
+corridor        8.0   44    1.00       0.24   0.08  |   1.00     0.018  0.010  | yes
+corridor        8.0   52    1.00       0.22   0.07  |   1.00     0.016  0.009  | yes
+corridor        12.0  20    1.00       0.27   0.07  |   1.00     0.022  0.009  | yes
+corridor        12.0  28    1.00       0.22   0.07  |   1.00     0.019  0.007  | yes
+corridor        12.0  36    1.00       0.22   0.06  |   1.00     0.015  0.006  | yes
+corridor        12.0  44    1.00       0.19   0.06  |   1.00     0.016  0.009  | yes
+corridor        12.0  52    1.00       0.17   0.05  |   1.00     0.014  0.008  | yes
+dumbbell        8.0   20    1.00       0.39   0.10  |   1.00     0.032  0.014  | yes
+dumbbell        8.0   28    1.00       0.31   0.09  |   1.00     0.023  0.012  | yes
+dumbbell        8.0   36    1.00       0.28   0.07  |   1.00     0.020  0.010  | yes
+dumbbell        8.0   44    1.00       0.27   0.06  |   1.00     0.016  0.009  | yes
+dumbbell        8.0   52    1.00       0.25   0.06  |   1.00     0.015  0.008  | yes
+dumbbell        12.0  20    1.00       0.38   0.08  |   1.00     0.023  0.012  | yes
+dumbbell        12.0  28    1.00       0.28   0.07  |   1.00     0.022  0.011  | yes
+dumbbell        12.0  36    1.00       0.24   0.07  |   1.00     0.018  0.010  | yes
+dumbbell        12.0  44    1.00       0.20   0.06  |   1.00     0.015  0.010  | yes
+dumbbell        12.0  52    1.00       0.18   0.05  |   1.00     0.013  0.009  | yes
+perturbed_grid  8.0   20    1.00       0.27   0.08  |   1.00     0.030  0.016  | yes
+perturbed_grid  8.0   28    1.00       0.28   0.07  |   1.00     0.021  0.013  | yes
+perturbed_grid  8.0   36    1.00       0.28   0.06  |   1.00     0.017  0.012  | yes
+perturbed_grid  8.0   44    1.00       0.23   0.05  |   1.00     0.015  0.010  | yes
+perturbed_grid  8.0   52    1.00       0.21   0.05  |   1.00     0.013  0.009  | yes
+perturbed_grid  12.0  20    1.00       0.22   0.06  |   1.00     0.033  0.019  | yes
+perturbed_grid  12.0  28    1.00       0.17   0.05  |   1.00     0.023  0.016  | yes
+perturbed_grid  12.0  36    1.00       0.14   0.05  |   1.00     0.019  0.013  | yes
+perturbed_grid  12.0  44    1.00       0.13   0.04  |   1.00     0.016  0.012  | yes
+perturbed_grid  12.0  52    1.00       0.13   0.04  |   1.00     0.014  0.012  | yes
+uniform         8.0   20    1.00       0.42   0.10  |   1.00     0.033  0.016  | yes
+uniform         8.0   28    1.00       0.35   0.08  |   1.00     0.024  0.013  | yes
+uniform         8.0   36    1.00       0.28   0.06  |   1.00     0.019  0.011  | yes
+uniform         8.0   44    1.00       0.25   0.06  |   1.00     0.016  0.010  | yes
+uniform         8.0   52    1.00       0.22   0.05  |   1.00     0.014  0.009  | yes
+uniform         12.0  20    1.00       0.28   0.08  |   1.00     0.028  0.014  | yes
+uniform         12.0  28    1.00       0.34   0.07  |   1.00     0.022  0.011  | yes
+uniform         12.0  36    1.00       0.31   0.06  |   1.00     0.020  0.011  | yes
+uniform         12.0  44    1.00       0.28   0.05  |   1.00     0.019  0.009  | yes
+uniform         12.0  52    1.00       0.24   0.05  |   1.00     0.018  0.009  | yes
+
+k narrow enough in every stratum: [20, 28, 36, 44, 52]
+SELECTED REPLICATE COUNT: 20
+10 non-binding trajectory plot(s) written to results/studies/precision_pilot_rerun/trajectories

@@ -1,0 +1,90 @@
+{
+  "name": "Replicate-count selection (authoritative): precision_pilot_rerun2 on the final candidate code",
+  "decided_utc": "2026-10-07T04:43:11Z",
+  "decided_utc_source": "system clock when this record was written",
+  "selected_replicates": 20,
+  "status": "selected",
+  "rule": "experiments/precision/replicate_rule_v1.json (frozen before any pilot; unchanged)",
+  "decision_tool": "python/replicate_decision.py (exit 0)",
+  "pilot": {
+    "config": "experiments/precision_pilot_rerun2.json (same design and study_seed as precision_pilot.json: identical graphs)",
+    "commit": "ba197e7350cd7b97ed50f5606db87f097e555aee",
+    "algorithm_code": "d4c96cc (ba197e7 adds only the pilot config, a test and an audit note)",
+    "binary_built_utc": "2026-10-07T02:56:53Z from d4c96cc; not rebuilt during the run",
+    "working_tree_dirty": false,
+    "run_started_utc": "2026-10-07T03:42:26.212718+00:00",
+    "last_timing_written_utc": "2026-10-07T04:35:35Z",
+    "uninterrupted": "single environment record; empty study directory at start",
+    "machine_quiet": "no file in the repository or build tree was modified during the run",
+    "power_plan": "Power Scheme GUID: 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c  (High performance)",
+    "graphs": 1560,
+    "cells": 30,
+    "timed_runs": 31200,
+    "valid_timed_runs": 31200,
+    "generation_attempts": 1592,
+    "rejected_disconnected": 32,
+    "fairness": "PASS, 0 violations, 0 warnings",
+    "failures": 0
+  },
+  "outcome": {
+    "passing_k": [
+      20,
+      28,
+      36,
+      44,
+      52
+    ],
+    "selected": 20,
+    "max_runtime_hw_at_20": 0.05,
+    "max_cds_hw_pp_at_20": 0.46
+  },
+  "output_equivalence_evidence": {
+    "test": "cpp/tests/test_search_equivalence.cpp: 14,656 comparisons identical vs verbatim pre-audit copies; mutation checks detect tie-break changes",
+    "replay_27c7d26": "experiments/precision/search_equivalence_replay_27c7d26.log: 6,240/6,240 identical",
+    "replay_d4c96cc": "experiments/precision/search_equivalence_replay_d4c96cc.log: 6,240/6,240 identical",
+    "replay_reference": "CDSs recorded by the pre-audit build in results/studies/precision_pilot (selected_ids per graph and algorithm)",
+    "replay_timings": "diagnostic only, not a controlled measurement, not reported"
+  },
+  "history": [
+    {
+      "pilot": "precision_pilot",
+      "code": "4e03a2c (pre-audit full-scan Li/Funke)",
+      "selected": 36,
+      "status": "historical; superseded by the pre-final audit",
+      "record": "experiments/precision/replicate_selection_v1.json"
+    },
+    {
+      "pilot": "precision_pilot_rerun",
+      "code": "27c7d26",
+      "selected": 20,
+      "status": "superseded: the machine was not fully quiet (test compile ~00:12:54Z, commits 00:29-00:31Z) and d4c96cc changed timed code afterwards",
+      "decision_output_copy": "experiments/precision/precision_pilot_rerun_superseded_replicate_decision.txt"
+    },
+    {
+      "pilot": "precision_pilot_rerun2",
+      "code": "d4c96cc",
+      "selected": 20,
+      "status": "AUTHORITATIVE"
+    }
+  ],
+  "final_study": "experiments/final.json: 50 cells x 20 replicates = 1,000 graphs",
+  "methods_statement": "Each primary experimental cell uses 20 independently generated graph instances. This replicate count was selected before final data collection using a preregistered precision pilot with exact Williams execution-order balance; 20 was the smallest candidate count for which all required CDS-quality and runtime confidence-interval precision criteria were satisfied across all pilot strata.",
+  "evidence_sha256": {
+    "experiments/precision/replicate_rule_v1.json": "06057dc8cd1c92b525120f5c8b340ec50834f5fe983275f40b2cdf21c59620ef",
+    "python/replicate_decision.py": "843db3a4613969fac4da41806161bc33e8759ec7fcdcc7558578dd030704f776",
+    "experiments/precision_pilot_rerun2.json": "f63304f9e29a0b563ad302242d1a0c98e320a1e8bb09459907da62960f7c5aa4",
+    "results/studies/precision_pilot_rerun2/replicate_decision.txt": "f407910bb2648b7127ca4874dae3d295dd40ef668cd1c172bfbb00e723e933db",
+    "results/studies/precision_pilot_rerun2/replicate_decision.json": "1af85e5b62e5626e66d8d3c46538893d8341a5708dbe75b8d703a9c2b17813de",
+    "results/studies/precision_pilot_rerun2/graph_level.csv (decision input)": "59fc7a15818660c26cdc2d21dfb227d567d7c18888aa1dd10d303269f510c3d8",
+    "results/studies/precision_pilot_rerun2/raw_runs.csv (not committed)": "33a7114824d5b80f57cbc677321719b5b204614d4a9ffc8e6f296654607a2b26",
+    "results/studies/precision_pilot_rerun2/datasets.csv (not committed)": "593535196bd15d71da83903349197e36c6056cc453e8b07f498ece60eff3c7e7",
+    "results/studies/precision_pilot_rerun2/generation_attempts.csv (not committed)": "4517565f38f81c09223c92df924fdaa82577605466680fee7d7ea46748afcea6",
+    "results/studies/precision_pilot_rerun2/fairness_report.json": "57e85b99e990189f0fabe887493b0d10826071d3823a8014ccd9accc9f8ed162",
+    "results/studies/precision_pilot_rerun2/environment.json": "46343b14b926cc07bcd9eb72ae0bb38ae320f20f9ac4f02e0873ef11ace303b5",
+    "results/studies/precision_pilot_rerun/replicate_decision.txt (superseded)": "78f6af9cca8d2390df5166b95fa769d83ef231c2a6410492af701fd3ba0ab937",
+    "experiments/precision/search_equivalence_replay_27c7d26.log": "9ffda542a4ced23b05cf39109dba53b04b585506fdf75090fbcbe1754682d9e5",
+    "experiments/precision/search_equivalence_replay_d4c96cc.log": "f63e423f612462c4ea5932e14d71ee1259e0cc2162c01f78822c33b21eac3f05",
+    "experiments/precision/search_equivalence_replay.py": "6e0405c257e3739faa5e2423dc2abb160ad9738b44f75477b6459ecac8c10bbc",
+    "cpp/tests/test_search_equivalence.cpp": "5859aa52a61a8950a9bf296c24cb28730b32bf66fa9e623c06a547e806faa93d"
+  }
+}

@@ -1,7 +1,9 @@
 # v1 Final Experiment Protocol (pre-registered)
 
-**Status: REOPENED BEFORE ANY FINAL DATA — final run BLOCKED.** The
-2026-10-06 lock (commit `a5cebd7`) was rejected for final runtime claims by the
+**Status: LOCKED** (2026-10-07; git tag `v1.0-final-experiment` on the lock
+commit, `METHODOLOGY_VERSION = "v1.0-final-experiment"`; final study 50 cells ×
+20 replicates = 1,000 graphs). History: the protocol was reopened before any
+final data. The 2026-10-06 lock (commit `a5cebd7`) was rejected for final runtime claims by the
 pre-final read-only audit: Funke and Li S-MIS were
 implemented as full-vertex scans (≈ rounds·n and ≈ blues·n neighbour queries)
 while Marathe and Wan need ≈ 2n, so runtime partly measured implementation
@@ -165,7 +167,7 @@ centralized Wan-level MIS").
   distance on independent validation seeds) is version-controlled.
 * Observed degree statistics are recorded; the target is not assumed to be
   achieved.
-* **Replicate-count selection — LOCKED: 36 independent graphs per cell.** The final number of independent graph instances per
+* **Replicate-count selection — LOCKED: 20 independent graphs per cell.** The final number of independent graph instances per
   experimental cell will be selected using a clean precision pilot performed
   before the final experimental freeze. Candidate replicate counts are
   k ∈ {20, 28, 36, 44, 52}, preserving exact Williams execution-order balance
@@ -209,24 +211,39 @@ centralized Wan-level MIS").
     always passes). A nested "k+8 estimate inside the k CI" test was rejected
     because cumulative estimates share observations. Point-estimate
     trajectories across k are plotted as a **non-binding** diagnostic.
-  * **Outcome** (`experiments/precision/replicate_selection_v1.json`, with
-    SHA-256 of the rule, decision tool, pilot config, decision output and
-    its input; byte-identical copies of the decision output, its input
-    `graph_level.csv`, the fairness report and the environment record are
-    committed under `experiments/precision/`): the clean pilot ran from
-    commit `4e03a2c` with no local changes, uninterrupted, from an empty
-    study directory (1,560 graphs, 30 cells, 31,200 timed runs, all valid;
-    fairness PASS with 0 violations and 0 warnings; 0 failures). k = 20
-    and 28 failed; **36 was the first k to pass in every stratum** (44 and
-    52 also pass). Runtime precision was binding: at k = 28 only 15/18
-    clustered comparisons per density were within ±10%, all involving
-    Funke at n = 2000 and 10000. CDS-fraction precision already passed at
-    k = 20 (max half-width 0.46 pp against 1 pp). `final.json` and the
-    sparse study use 36.
-  * Methods statement: "Each primary experimental cell uses 36 independently
+  * **Authoritative outcome: k = 20** (`experiments/precision/replicate_selection_final.json`,
+    with SHA-256 of the rule, decision tool, pilot config, decision output
+    and its inputs; byte-identical copies of the decision output, its input
+    `graph_level.csv`, the fairness report, the environment record and both
+    output-equivalence replay logs are committed under
+    `experiments/precision/`). `precision_pilot_rerun2` ran on the final
+    candidate code (`d4c96cc`, committed as `ba197e7`), uninterrupted, from
+    an empty study directory, with no file in the repository or build tree
+    modified during the run; same graphs as every earlier pilot (1,560
+    graphs, 30 cells); 31,200 timed runs, all valid; fairness PASS with 0
+    violations and 0 warnings; 0 failures. Every candidate k passed every
+    stratum, so the rule selected the smallest, **20**. Widest runtime CI at
+    k = 20: ±5.0% (target ±10%); widest CDS-fraction CI:
+    0.46 pp (target 1 pp; identical to the earlier pilots, because the
+    graphs and CDSs are identical).
+  * **History (not authoritative).**
+    1. `precision_pilot` on the pre-audit code (`4e03a2c`) selected 36,
+       because Funke's full-scan runtime variance on clustered graphs bound
+       runtime precision (`replicate_selection_v1.json`). That code was
+       rejected by the pre-final audit (§3a), so this selection is
+       historical.
+    2. `precision_pilot_rerun` on `27c7d26` selected 20. It is superseded:
+       the machine was not fully quiet (a test compile at ~00:12:54Z,
+       commits at 00:29–00:31Z), and `d4c96cc` then changed timed code
+       (unused includes, an unused BFS parent array in Li's MIS step).
+    3. `precision_pilot_rerun2` on `d4c96cc` is the authoritative pilot.
+       Before it ran, `d4c96cc` was re-validated: equivalence test, both
+       full suites, and a replay of all 1,560 pilot graphs (6,240/6,240
+       CDSs identical to the pre-audit build).
+  * Methods statement: "Each primary experimental cell uses 20 independently
     generated graph instances. This replicate count was selected before
     final data collection using a preregistered precision pilot with exact
-    Williams execution-order balance; 36 was the smallest candidate count
+    Williams execution-order balance; 20 was the smallest candidate count
     for which all required CDS-quality and runtime confidence-interval
     precision criteria were satisfied across all pilot strata."
 * The graph instance is the statistical unit; timing repetitions on one graph are

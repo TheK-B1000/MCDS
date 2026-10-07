@@ -105,3 +105,8 @@ claims (Funke / Li S-MIS full-vertex scans). The protocol is reopened, the
 local tag was deleted before being pushed, and the precision pilot will be
 re-run after the output-identical fix (`experiments/precision_pilot_rerun.json`).
 See `methodology_audit.md`, "Pre-final audit change".
+
+**Final lock.** After the output-identical Li/Funke search change and its
+validation, the authoritative pilot (`precision_pilot_rerun2`) selected
+k = 20. The protocol is locked with tag `v1.0-final-experiment` (see
+`experiments/precision/replicate_selection_final.json`).

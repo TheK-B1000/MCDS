@@ -437,3 +437,13 @@ hand-over report). Calibration-gated admission: `feasibility_calibration`
   (`experiments/precision_pilot_rerun2.json`, same design and seed). The
   `precision_pilot_rerun` results are kept as evidence and are superseded.
 
+## Final lock (2026-10-07)
+
+* `precision_pilot_rerun2` (authoritative; on `d4c96cc` via `ba197e7`, quiet
+  machine verified by file times) selected k = 20; every candidate passed.
+* `final.json` and `sparse_density5.json` set to 20 (final study 1,000
+  graphs); evidence in `experiments/precision/replicate_selection_final.json`;
+  `METHODOLOGY_VERSION = "v1.0-final-experiment"`; annotated tag
+  `v1.0-final-experiment` created on the lock commit.
+* From here on, a scientific change means a new methodology revision and
+  rerunning the affected results, never a silent patch.
