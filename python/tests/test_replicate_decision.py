@@ -78,10 +78,11 @@ class PilotRerunConfigTests(unittest.TestCase):
     def test_rerun_is_the_original_design_with_a_new_study_id(self):
         exp = rd._ROOT / "experiments"
         original = json.loads((exp / "precision_pilot.json").read_text(encoding="utf-8"))
-        rerun = json.loads((exp / "precision_pilot_rerun.json").read_text(encoding="utf-8"))
-        self.assertEqual(rerun["study_id"], "precision_pilot_rerun")
         strip = lambda d: {k: v for k, v in d.items() if k not in ("study_id", "description")}  # noqa: E731
-        self.assertEqual(strip(rerun), strip(original))  # same seed and design -> identical graphs
+        for name in ("precision_pilot_rerun", "precision_pilot_rerun2"):
+            rerun = json.loads((exp / f"{name}.json").read_text(encoding="utf-8"))
+            self.assertEqual(rerun["study_id"], name)
+            self.assertEqual(strip(rerun), strip(original))  # same seed and design -> identical graphs
 
 
 class LockedSelectionTests(unittest.TestCase):

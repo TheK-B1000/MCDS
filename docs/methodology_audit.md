@@ -420,4 +420,20 @@ hand-over report). Calibration-gated admission: `feasibility_calibration`
   `v1.0-final-experiment`.
 * Work stays on `main` (no revision branch, no v1.1 naming). The protocol
   label is `v1.0-dev` until the final lock.
+* **Pilot re-run on `27c7d26` (`precision_pilot_rerun`, 2026-10-07 00:10:47Z–
+  01:02:53Z).** Clean start, uninterrupted, fairness PASS, all 31,200 timed runs
+  valid; the frozen rule selected k = 20 (every k passed every stratum; widest
+  runtime CI ±6.4% at k = 20). Literal history: the machine was **not** fully
+  quiet. The test target `test_search_equivalence` was compiled at ~00:12:54Z,
+  and the owner's commits `c8566aa` (removing the optional
+  `representation_ablation` config and its mentions) and `d4c96cc` (removing
+  unused includes from four algorithm sources and an unused BFS `parent` array
+  from `WanLevelMis.cpp`, inside Li's timed MIS step) were made at
+  00:29–00:31Z. The timing binary itself was built at 00:01:10Z from `27c7d26`
+  and never rebuilt during the run (all 1,560 results report the same build).
+* Because `d4c96cc` changed timed algorithm code after that pilot, the owner
+  chose to keep it, re-validate outputs (equivalence test and full replay
+  against the pre-audit CDSs) and re-run the pilot on the code to be locked
+  (`experiments/precision_pilot_rerun2.json`, same design and seed). The
+  `precision_pilot_rerun` results are kept as evidence and are superseded.
 

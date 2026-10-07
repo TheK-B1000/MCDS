@@ -1,0 +1,67 @@
+{
+  "study_id": "precision_pilot_rerun2",
+  "study_seed": 20261010,
+  "description": "Clean precision pilot for the code that will be locked (commit d4c96cc or its descendant: the output-identical Li/Funke search change plus d4c96cc's removal of unused includes and an unused BFS parent array). Same design and study_seed as experiments/precision_pilot.json, so the graphs are identical; selects the replicate count mechanically under the unchanged rule experiments/precision/replicate_rule_v1.json. Supersedes precision_pilot_rerun (run on 27c7d26 while the machine was not fully quiet). Run under the machine-preparation checklist, with no other activity on the machine or the repository.",
+  "algorithms": [
+    "marathe",
+    "wan",
+    "funke",
+    "li"
+  ],
+  "spatial_backend": "cgal",
+  "synthetic": {
+    "geometries": [
+      "uniform",
+      "clustered",
+      "perturbed_grid",
+      "corridor",
+      "dumbbell"
+    ],
+    "sizes": [
+      500,
+      2000,
+      10000
+    ],
+    "densities": [
+      8.0,
+      12.0
+    ],
+    "radius": 1.0,
+    "replicates": 52,
+    "geometry_parameters": {
+      "clustered": {
+        "clusters": 4,
+        "background_fraction": 0.5,
+        "spread_relative": 0.05
+      },
+      "corridor": {
+        "corridor_width": 3.0
+      },
+      "dumbbell": {
+        "neck_width": 1.0,
+        "neck_length": 3.0
+      },
+      "perturbed_grid": {
+        "jitter": 0.15
+      }
+    }
+  },
+  "connectivity_rule": {
+    "mode": "resample_until_connected",
+    "max_attempts": 80
+  },
+  "timing": {
+    "repetitions": 5,
+    "warmups": 1,
+    "instrumentation": "none",
+    "process_mode": "shared",
+    "validate": "all",
+    "timeout_seconds": 3600
+  },
+  "memory_probe": false,
+  "counter_pass": null,
+  "exact": {
+    "max_n": 0,
+    "timeout_seconds": 600
+  }
+}
