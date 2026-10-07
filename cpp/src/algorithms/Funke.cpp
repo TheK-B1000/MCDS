@@ -1,6 +1,5 @@
 #include "algorithms/Funke.hpp"
 
-#include <algorithm>
 #include <cstdint>
 #include <stdexcept>
 #include <vector>

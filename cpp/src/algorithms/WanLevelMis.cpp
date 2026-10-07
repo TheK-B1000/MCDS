@@ -1,17 +1,14 @@
 #include "algorithms/WanLevelMis.hpp"
 
 #include <algorithm>
-#include <cstdint>
 #include <queue>
 #include <stdexcept>
-#include <utility>
 #include <vector>
 
 namespace mcds {
 namespace {
 
 struct BfsTree {
-    std::vector<int> parent;
     std::vector<int> level;
 };
 
@@ -24,7 +21,6 @@ BfsTree buildBfsTree(
     const std::size_t n = points.size();
 
     BfsTree tree;
-    tree.parent.assign(n, -1);
     tree.level.assign(n, -1);
 
     std::vector<char> visited(n, 0);
@@ -48,7 +44,6 @@ BfsTree buildBfsTree(
                 continue;
             }
             visited[v] = 1;
-            tree.parent[v] = static_cast<int>(u);
             tree.level[v] = tree.level[u] + 1;
             queue.push(v);
         }

@@ -1,10 +1,8 @@
 #include "algorithms/Wan.hpp"
 
 #include <algorithm>
-#include <cstdint>
 #include <queue>
 #include <stdexcept>
-#include <utility>
 #include <vector>
 
 namespace mcds {
